@@ -1,4 +1,5 @@
-from typing import List
+from typing import List, Optional, Dict
+
 import requests
 from bs4 import BeautifulSoup
 from googlesearch import search
@@ -44,15 +45,15 @@ class WebTool:
             print(f"Lỗi khi tải URL {url}: {e}")
             return ""
 
-    def search_and_fetch(self, query: str, max_results: int = 5) -> List[str]:
+    def search_and_fetch(self, query: str, max_results: int = 5) -> Dict[str, str]:
         """Search for a query and fetch data from the resulting URLs."""
         urls = self.web_search(query, max_results)
         
         # Lấy nội dung từ từng URL (loại bỏ các kết quả rỗng nếu fetch bị lỗi)
-        results = []
+        results = {}
         for url in urls:
             data = self.fetch_data(url)
             if data:
-                results.append(data)
+                results[url] = data
                 
         return results
