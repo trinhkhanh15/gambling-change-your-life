@@ -26,10 +26,10 @@ class Orchestrator:
         self.theses = []
 
         query = """
-        ("AI chip" OR GPU OR semiconductor)
-        ("export controls" OR sanctions OR tariffs OR shortage OR "supply chain")
-        (NVIDIA OR AMD OR TSMC OR ASML OR China OR US)
-        (site:reuters.com OR site:ft.com OR site:wsj.com)
+        (earnings OR revenue OR margin OR guidance OR demand OR orders OR capex)
+        ("beat expectations" OR "missed expectations" OR forecast OR outlook OR downgrade OR upgrade)
+        (company OR shares OR stock)
+        (site:reuters.com OR site:ft.com OR site:wsj.com OR site:cnbc.com)
         """
 
         # Step 1: Search and fetch data from the web
@@ -42,7 +42,7 @@ class Orchestrator:
             fetched_data=fetched_data,
             max_theses_count=max_results
         )
-        research_prompt = self.prompt_renderer.research_prompt(research_input)
+        research_prompt = self.prompt_renderer.research_prompt(**research_input.model_dump())
         llm_research_output = self.llm.generate_response(
             system_prompt=research_prompt,
             response_model=List[ResearchItem],
@@ -63,7 +63,7 @@ class Orchestrator:
                 research_data=search_results
             ) 
 
-            analyse_prompt = self.prompt_renderer.analyse_prompt(analyse_input)
+            analyse_prompt = self.prompt_renderer.analyse_prompt(**analyse_input.model_dump())
             llm_analyse_output = self.llm.generate_response(
                 system_prompt=analyse_prompt,
                 response_model=AnalyseOutput,

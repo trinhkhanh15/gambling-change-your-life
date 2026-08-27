@@ -1,59 +1,83 @@
-from typing import List, Optional, Dict
+import os
+from typing import Dict, List
 
-import requests
-from bs4 import BeautifulSoup
-from googlesearch import search
+from tavily import TavilyClient
+
 
 class WebTool:
-    def __init__(self, timeout: int = 10):
-        # Đặt thời gian chờ tối đa cho các request
-        self.timeout = timeout
-        # Giả mạo User-Agent giống trình duyệt thật để tránh bị các trang web chặn (Lỗi 403)
-        self.headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-        }
+    def __init__(self, api_key: str | None = None):
+        api_key = api_key or os.getenv("TAVILY_API_KEY")
 
-    def web_search(self, query: str, max_results: int) -> List[str]:
-        """Perform a web search for the given query and return a list of URLs."""
+        if not api_key:
+            raise ValueError(
+                "TAVILY_API_KEY is not set. "
+                "Pass api_key to WebTool() or set the environment variable."
+            )
+
+        self.client = TavilyClient(api_key=api_key)
+
+    def web_search(
+        self,
+        query: str,
+        max_results: int = 5,
+    ) -> List[str]:
+        """Search the web and return a list of URLs."""
         try:
-            # Trả về danh sách các URL từ kết quả tìm kiếm Google
-            urls = search(query, num=max_results, stop=max_results, pause=2.0)
-            return list(urls)
+            response = self.client.search(
+                query=query,
+                max_results=max_results,
+                search_depth="basic",
+            )
+
+            return [
+                result["url"]
+                for result in response.get("results", [])
+                if result.get("url")
+            ]
+
         except Exception as e:
-            print(f"Lỗi khi tìm kiếm: {e}")
+            print(f"Web search failed: {e}")
             return []
 
-    def fetch_data(self, url: str) -> str:
-        """Fetch data from the given URL and return it as a string."""
-        try:
-            # Gửi HTTP GET request tới URL
-            response = requests.get(url, headers=self.headers, timeout=self.timeout)
-            response.raise_for_status()  # Ném lỗi nếu HTTP status code không phải là 2xx (ví dụ: 404, 500)
-            
-            # Sử dụng BeautifulSoup để parse HTML
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            # Xóa các thẻ script và style vì chúng không chứa văn bản đọc được
-            for script in soup(["script", "style"]):
-                script.extract()
-                
-            # Lấy toàn bộ văn bản từ trang web, các đoạn văn cách nhau bằng khoảng trắng
-            text = soup.get_text(separator=' ', strip=True)
-            return text
-            
-        except requests.exceptions.RequestException as e:
-            print(f"Lỗi khi tải URL {url}: {e}")
-            return ""
+    def search_and_fetch(
+        self,
+        query: str,
+        max_results: int = 5,
+    ) -> Dict[str, str]:
+        """
+        Search the web and return content in the old format:
 
-    def search_and_fetch(self, query: str, max_results: int = 5) -> Dict[str, str]:
-        """Search for a query and fetch data from the resulting URLs."""
-        urls = self.web_search(query, max_results)
-        
-        # Lấy nội dung từ từng URL (loại bỏ các kết quả rỗng nếu fetch bị lỗi)
-        results = {}
-        for url in urls:
-            data = self.fetch_data(url)
-            if data:
-                results[url] = data
-                
-        return results
+        {
+            "https://example.com/article": "article content...",
+            ...
+        }
+        """
+        try:
+            response = self.client.search(
+                query=query,
+                max_results=max_results,
+                search_depth="advanced",
+                include_raw_content=True,
+            )
+
+            results: Dict[str, str] = {}
+
+            for result in response.get("results", []):
+                url = result.get("url")
+
+                # Prefer full extracted page content.
+                # Fall back to Tavily's search-result content.
+                content = (
+                    result.get("raw_content")
+                    or result.get("content")
+                    or ""
+                )
+
+                if url and content:
+                    results[url] = content
+
+            return results
+
+        except Exception as e:
+            print(f"Search and fetch failed: {e}")
+            return {}

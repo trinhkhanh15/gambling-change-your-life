@@ -9,6 +9,7 @@ pydantic
 requests 
 beautifulsoup4 
 googlesearch-python
+tavily-python
 
 # Infra
 python-dotenv

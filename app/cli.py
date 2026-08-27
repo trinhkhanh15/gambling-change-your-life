@@ -44,6 +44,7 @@ def format_thesis(index: int, thesis: Thesis) -> str:
 			evidence or "- None provided",
 			"**Counter-evidence:**",
 			counter_evidence or "- None provided",
+			"**Created at:** {thesis.created_at.isoformat()}",
 		]
 	)
 
