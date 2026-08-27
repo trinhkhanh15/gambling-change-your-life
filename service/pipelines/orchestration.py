@@ -36,6 +36,7 @@ class Orchestrator:
         fetched_data = self.web_tool.search_and_fetch(
             query=query,
         )
+        print("Web search and fetch completed.")
 
         # Step 2: Research the fetched data using LLM
         research_input = ResearchInput(
@@ -47,6 +48,7 @@ class Orchestrator:
             system_prompt=research_prompt,
             response_model=List[ResearchItem],
         )
+        print("LLM Research Called.")
 
         # Step 3: Analyse the research output using LLM
         
@@ -68,6 +70,7 @@ class Orchestrator:
                 system_prompt=analyse_prompt,
                 response_model=AnalyseOutput,
             )
+            print("LLM Analysis Called.")
 
             # Step 4: Collect the theses and outcomes
             thesis = Thesis(
