@@ -1,3 +1,11 @@
+# LLM 
+openai
+instructor
 
 # Data
 pydantic
+
+# Web tools
+requests 
+beautifulsoup4 
+googlesearch-python
