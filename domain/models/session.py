@@ -7,10 +7,12 @@ class Thesis(BaseModel):
 
     content: str
     thinking: str
-    evidence: Optional[List[str]] = None
-    counter_evidence: Optional[List[str]] = None
+    
     prediction: str
+    evidence: Optional[List[str]] = None
+    counter_evidence: Optional[List[str]] = None 
     confidence: float
+
     created_at: datetime = datetime.now()
 
 class Outcome(BaseModel):
