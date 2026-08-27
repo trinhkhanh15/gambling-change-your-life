@@ -1,10 +1,9 @@
 from datetime import datetime
 from typing import List, Optional
 
-from domain.models.session import Thesis, Outcome
-from domain.models.feedback import Feedback
+from domain.models.session import Thesis
 from domain.models.analyse_layer import AnalyseInput, AnalyseOutput
-from domain.models.research_layer import ResearchItem, ResearchOutput, ResearchInput
+from domain.models.research_layer import ResearchItem, ResearchInput
 
 from service.tools.web_tool import WebTool
 from service.shared.prompt_renderer import PromptRenderer
@@ -20,12 +19,12 @@ class Orchestrator:
 
     def execute(
         self,
-        query: str,
-        max_results: int = 3,
-    ) -> Outcome:
+        max_results: Optional[int] = 3,
+    ) -> List[Thesis]:
         """Execute the analysis pipeline for the given query."""
 
-        # Step 1: Search and fetch data from the web
+        self.theses = []
+
         query = """
         ("AI chip" OR GPU OR semiconductor)
         ("export controls" OR sanctions OR tariffs OR shortage OR "supply chain")
@@ -33,6 +32,7 @@ class Orchestrator:
         (site:reuters.com OR site:ft.com OR site:wsj.com)
         """
 
+        # Step 1: Search and fetch data from the web
         fetched_data = self.web_tool.search_and_fetch(
             query=query,
         )
@@ -44,7 +44,7 @@ class Orchestrator:
         )
         research_prompt = self.prompt_renderer.research_prompt(research_input)
         llm_research_output = self.llm.generate_response(
-            systemp_prompt=research_prompt,
+            system_prompt=research_prompt,
             response_model=List[ResearchItem],
         )
 
@@ -65,7 +65,7 @@ class Orchestrator:
 
             analyse_prompt = self.prompt_renderer.analyse_prompt(analyse_input)
             llm_analyse_output = self.llm.generate_response(
-                systemp_prompt=analyse_prompt,
+                system_prompt=analyse_prompt,
                 response_model=AnalyseOutput,
             )
 

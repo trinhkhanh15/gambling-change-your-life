@@ -9,3 +9,6 @@ pydantic
 requests 
 beautifulsoup4 
 googlesearch-python
+
+# Infra
+python-dotenv
