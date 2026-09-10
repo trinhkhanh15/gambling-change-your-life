@@ -1,0 +1,82 @@
+[
+  {
+    "id": "evt_001",
+    "published_at": "2025-05-22T20:30:00Z",
+    "source": "SEC Form 8-K / Earnings Release",
+    "title": "NVIDIA Reports Q1 FY2026: Data Center Revenue Surges 150% YoY, Raises Full-Year Guidance",
+    "content": "NVIDIA reported Q1 revenue of $28.5B vs consensus $26.2B, driven by record Data Center revenue of $24.0B (+150% YoY). Gross margin reached 78.2%. Management raised Q2 revenue guidance to $30.0B (well above consensus $28.0B), citing sustained enterprise demand for Blackwell architecture and hyperscaler commitments.",
+    "companies_mentioned": ["NVDA"],
+    "sectors": ["Semiconductors", "Information Technology"],
+    "nature": "fact",
+    "scope": "company",
+    "expectation_context": {
+      "consensus_metric": "Revenue",
+      "expected_value": "$26.2B",
+      "actual_value": "$28.5B",
+      "surprise_direction": "BEAT"
+    }
+  },
+  {
+    "id": "evt_002",
+    "published_at": "2025-06-15T14:00:00Z",
+    "source": "Bloomberg",
+    "title": "Microsoft and Alphabet Jointly Announce 30% CapEx Expansion Focused on AI Server Infrastructure",
+    "content": "In SEC filings and conference remarks, both Microsoft and Google confirmed upward revisions to their 2025/2026 infrastructure capital expenditures, adding a combined $18B primarily allocated to next-generation AI accelerators and data center liquid cooling infrastructure.",
+    "companies_mentioned": ["MSFT", "GOOGL", "NVDA"],
+    "sectors": ["Cloud Computing", "Semiconductors"],
+    "nature": "fact",
+    "scope": "industry",
+    "expectation_context": {
+      "consensus_metric": "Hyperscaler CapEx",
+      "expected_value": "Flat QoQ",
+      "actual_value": "+30% Revisions",
+      "surprise_direction": "BEAT"
+    }
+  },
+  {
+    "id": "evt_003",
+    "published_at": "2025-07-10T09:15:00Z",
+    "source": "Reuters",
+    "title": "TSMC Advanced Packaging Bottlenecks May Delay High-End AI Chip Deliveries by 6 to 8 Weeks",
+    "content": "Industry supply-chain sources report that TSMC's CoWoS packaging line is operating at 100% capacity with equipment delivery lead times extending to 9 months. Analysts warn this bottleneck could cap Blackwell shipment volumes in Q3 and cause customer margin friction.",
+    "companies_mentioned": ["TSM", "NVDA"],
+    "sectors": ["Semiconductors"],
+    "nature": "expectation",
+    "scope": "industry",
+    "expectation_context": {
+      "consensus_metric": "Delivery Lead Times",
+      "expected_value": "Normal (4 weeks)",
+      "actual_value": "Delayed (+6 to 8 weeks)",
+      "surprise_direction": "MISS"
+    }
+  },
+  {
+    "id": "evt_004",
+    "published_at": "2025-08-20T16:45:00Z",
+    "source": "Financial Times",
+    "title": "Major Cloud Providers Form Consortium to Shift 50% of Future AI Workloads to In-House Custom ASICs, Halting NVDA Orders",
+    "content": "Internal procurement documents leak showing Amazon, Google, and Meta have officially frozen incremental merchant AI chip orders for 2026, pivoting CapEx into their proprietary silicon (Trainium, TPU v6, MTIA) due to soaring Nvidia software licensing fees and thermal power limits. Nvidia cancelation notices exceed $12B.",
+    "companies_mentioned": ["AMZN", "GOOGL", "META", "NVDA"],
+    "sectors": ["Cloud Computing", "Semiconductors"],
+    "nature": "fact",
+    "scope": "industry",
+    "expectation_context": {
+      "consensus_metric": "Merchant GPU Demand",
+      "expected_value": "High Growth",
+      "actual_value": "Halting Orders (-$12B Cancelations)",
+      "surprise_direction": "MISS"
+    }
+  },
+  {
+    "id": "evt_005",
+    "published_at": "2025-08-25T11:00:00Z",
+    "source": "TechCrunch",
+    "title": "NVIDIA CEO Jensen Huang Delivers Commencement Speech at Stanford University, Pledges $5M to AI Ethics Lab",
+    "content": "Jensen Huang spoke to graduating seniors at Stanford about the future of human-AI collaboration. Nvidia's philanthropic foundation also announced a $5M grant to support academic research in ethical AI algorithms.",
+    "companies_mentioned": ["NVDA"],
+    "sectors": ["General"],
+    "nature": "fact",
+    "scope": "company",
+    "expectation_context": null
+  }
+]
