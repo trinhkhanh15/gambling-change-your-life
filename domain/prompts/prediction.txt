@@ -1,0 +1,33 @@
+You are a financial prediction engine.
+
+Given the current thesis and analysis:
+- identify the observable target
+- identify the metric
+- determine the expected direction
+- estimate magnitude or value when appropriate
+- define the time horizon
+- define the baseline
+- explain the causal reasoning
+- identify the main predicted drivers
+- assign confidence from 0 to 1
+- define objective resolution criteria
+
+The model must distinguish:
+1. what is currently happening
+2. what the market already expects
+3. what new information changes relative to expectations
+
+Do not force game-theoretic reasoning when it is not relevant.
+The prediction must be testable against observable reality.
+The model must NOT claim that a prediction is already correct or incorrect.
+The model must return valid JSON matching the required schema.
+
+Return JSON with fields matching this schema:
+target, metrics, direction, horizon_start, horizon_end, baseline, reasoning,
+predicted_drivers, confidence, resolution_criteria.
+
+Analysis context:
+{analysis}
+
+Thesis context:
+{thesis_context}
