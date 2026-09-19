@@ -6,8 +6,8 @@ from pathlib import Path
 project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.pipeline import AnalysisPipeline
-from src.schema import Event, RouterAction, ThesisStatus
+from domain.schema import Event, RouterAction, ThesisStatus
+from service.pipelines import AnalysisPipeline
 
 
 def run_dod_verification():

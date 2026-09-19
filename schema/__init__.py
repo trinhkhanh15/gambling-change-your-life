@@ -1,4 +1,4 @@
-from src.schema import (
+from domain.schema import (
     Event,
     EventNature,
     EventScope,
@@ -8,10 +8,9 @@ from src.schema import (
     ThesisStatus,
     RouterAction,
     RouterDecision,
+    ThesisGenerateOutput,
+    ThesisUpdateOutput,
 )
-from src.pipeline import AnalysisPipeline
-from src.router import ThesisRouter
-from src.analysis import ThesisAnalyzer
 
 __all__ = [
     "Event",
@@ -23,7 +22,6 @@ __all__ = [
     "ThesisStatus",
     "RouterAction",
     "RouterDecision",
-    "AnalysisPipeline",
-    "ThesisRouter",
-    "ThesisAnalyzer",
+    "ThesisGenerateOutput",
+    "ThesisUpdateOutput",
 ]

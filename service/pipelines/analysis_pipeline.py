@@ -1,14 +1,10 @@
 from typing import Dict, List, Optional, Tuple
-from src.analysis import ThesisAnalyzer
-from src.llm_client import BaseLLMClient, get_llm_client
-from src.router import ThesisRouter
-from src.schema import (
-    Event,
-    RouterAction,
-    RouterDecision,
-    Thesis,
-    ThesisStatus,
-)
+from domain.schema.event import Event
+from domain.schema.router import RouterAction, RouterDecision
+from domain.schema.thesis import Thesis, ThesisStatus
+from infra.llm import BaseLLMClient, get_llm_client
+from service.agents.router import ThesisRouter
+from service.agents.thesis_analyzer import ThesisAnalyzer
 
 
 class AnalysisPipeline:

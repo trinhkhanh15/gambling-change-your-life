@@ -1,6 +1,8 @@
 from typing import List
-from src.llm_client import BaseLLMClient
-from src.schema import Event, RouterDecision, Thesis, ThesisStatus
+from domain.schema.event import Event
+from domain.schema.router import RouterDecision
+from domain.schema.thesis import Thesis, ThesisStatus
+from infra.llm.base import BaseLLMClient
 
 
 class ThesisRouter:

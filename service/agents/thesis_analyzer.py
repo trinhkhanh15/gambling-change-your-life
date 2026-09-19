@@ -1,12 +1,8 @@
 from datetime import datetime
 from typing import Optional
-from src.llm_client import BaseLLMClient
-from src.schema import (
-    Event,
-    EvidenceItem,
-    Thesis,
-    ThesisStatus,
-)
+from domain.schema.event import Event
+from domain.schema.thesis import EvidenceItem, Thesis, ThesisStatus
+from infra.llm.base import BaseLLMClient
 
 
 class ThesisAnalyzer:

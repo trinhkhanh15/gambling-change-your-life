@@ -1,32 +1,8 @@
-import json
-import os
-import re
-from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
-
-from src.schema import (
-    Event,
-    RouterAction,
-    RouterDecision,
-    Thesis,
-    ThesisGenerateOutput,
-    ThesisStatus,
-    ThesisUpdateOutput,
-)
-
-
-class BaseLLMClient(ABC):
-    @abstractmethod
-    def route_event(self, event: Event, candidate_theses: List[Thesis]) -> RouterDecision:
-        pass
-
-    @abstractmethod
-    def generate_thesis(self, event: Event) -> ThesisGenerateOutput:
-        pass
-
-    @abstractmethod
-    def update_kill_thesis(self, event: Event, thesis: Thesis) -> ThesisUpdateOutput:
-        pass
+from typing import List
+from domain.schema.event import Event
+from domain.schema.router import RouterAction, RouterDecision, ThesisGenerateOutput, ThesisUpdateOutput
+from domain.schema.thesis import Thesis, ThesisStatus
+from infra.llm.base import BaseLLMClient
 
 
 class MockFinancialLLMClient(BaseLLMClient):
@@ -163,10 +139,3 @@ class MockFinancialLLMClient(BaseLLMClient):
                 f"Độ vững chắc (strength) của thesis được nâng từ {thesis.strength} lên {new_str}."
             ),
         )
-
-
-def get_llm_client() -> BaseLLMClient:
-    api_key = os.getenv("OPENAI_API_KEY") or os.getenv("GEMINI_API_KEY")
-    if api_key:
-        pass
-    return MockFinancialLLMClient()
