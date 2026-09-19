@@ -47,3 +47,53 @@ Confidence:
 0.68
 ```
 
+### How to run (Demo)
+
+#### 1. Install dependencies
+
+Use Python 3.10 or newer and create a virtual environment:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+```
+
+#### 2. Configure the OpenAI API key
+
+Create a `.env` file in the project root. You can copy the example file:
+
+```bash
+cp .env.example .env
+```
+
+Then add your key:
+
+```dotenv
+OPENAI_API_KEY=your-openai-api-key
+TAVILY_API_KEY=your-tavily-api-key
+```
+
+The CLI loads this file automatically. An `OPENAI_API_KEY` and `TAVILY_API_KEY` should already be exported in your shell takes precedence over the value in `.env`.
+
+#### 3. Run the application
+
+From the project root, run:
+
+```bash
+python -m app.cli
+```
+
+To generate a different number of theses:
+
+```bash
+python -m app.cli --max-results 5
+```
+
+The application searches recent web sources, asks the language model to create
+research theses, and prints the predictions, evidence, counter-evidence, and
+confidence scores in the terminal.
+
+The application needs internet access for web search and page fetching. It is
+for learning and research only, not financial advice or automated trading.
+
