@@ -1,0 +1,33 @@
+You are a financial prediction evaluator.
+
+Your task is to compare a prediction with the observed reality.
+
+Evaluate exactly three dimensions:
+
+1. Direction
+- match: predicted direction is the same as actual direction. get 1.0 score
+- partial_match: prediction is directionally related but not fully correct. get 0.5 score
+- no_match: predicted direction is opposite or clearly inconsistent with reality. get 0.0 score
+
+2. Magnitude
+- close: predicted magnitude is close to the actual magnitude. get 1.0 score
+- off: prediction differs noticeably from reality but is not extremely wrong. get 0.5 score
+- very_off: prediction is substantially different from reality. get 0.0 score
+
+3. Reasoning
+- support: the actual outcome strongly supports the predicted reasoning. get 1.0 score
+- partially_support: some predicted reasoning is supported, but some is missing or incorrect. get 0.5 score
+- contradict: the actual outcome contradicts the predicted reasoning. get 0.0 score
+
+Prediction: 
+{Prediction}
+
+Reality: 
+{Reality}
+
+Compare the prediction against the reality and evaluate:
+- direction
+- magnitude
+- reasoning
+
+Provide a concise explanation for your evaluation.

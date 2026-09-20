@@ -1,20 +1,35 @@
+
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Optional
+from datetime import datetime, timezone
+from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-class Feedback(BaseModel):
-    """Represents feedback provided by the data."""
+class Direction(str, Enum):
+    UP = "UP"
+    DOWN = "DOWN"
+    FLAT = "FLAT"
 
-    agent_prediction: str
-    actual_happened: str
-    matching_score: float
-    reasoning: str
-    confidence: float
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class EvaluationStatus(str, Enum):
+    RESOLVED = "RESOLVED"
+
+
+class Feedback(BaseModel):
+    """Feedback generated from the comparison between a prediction and reality."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    agent_prediction: str = Field(..., min_length=1)
+    actual_happened: str = Field(..., min_length=1)
+    matching_score: float = Field(..., ge=0.0, le=1.0)
+    reasoning: str = Field(..., min_length=1)
+    confidence: float = Field(..., ge=0.0, le=1.0)
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
 
 
 class Reality(BaseModel):
@@ -22,51 +37,157 @@ class Reality(BaseModel):
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
-    target: str = Field(..., min_length=1)
-    metric: str = Field(..., min_length=1)
-    actual_value: float | None = None
-    actual_direction: str = Field(..., min_length=1)
-    observed_at: datetime = Field(default_factory=datetime.utcnow)
-    source: str = Field(..., min_length=1)
-    reasoning: str = Field(..., min_length=1)
-    evidence: list[str] = Field(default_factory=list)
-    actual_drivers: list[str] | None = None
+    target: str = Field(
+        ...,
+        min_length=1,
+        description="Asset, entity, or outcome being observed.",
+    )
 
-    @field_validator("actual_direction", mode="before")
-    @classmethod
-    def normalize_direction(cls, value):
-        if not isinstance(value, str):
-            return value
-        value = value.strip().upper()
-        if value in {"UP", "DOWN", "FLAT"}:
-            return value
-        raise ValueError("actual_direction must be one of: UP, DOWN, FLAT")
+    metric: str = Field(
+        ...,
+        min_length=1,
+        description="Metric used to evaluate the prediction.",
+    )
+
+    actual_value: float | None = Field(
+        default=None,
+        description="Observed value of the metric.",
+    )
+
+    actual_direction: Direction = Field(
+        ...,
+        description="Observed direction of the outcome.",
+    )
+
+    observed_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="Time when the actual outcome was observed.",
+    )
+
+    source: str = Field(
+        ...,
+        min_length=1,
+        description="Source of the observed outcome.",
+    )
+
+    reasoning: str = Field(
+        ...,
+        min_length=1,
+        description="Explanation of the observed outcome.",
+    )
+
+    evidence: list[str] = Field(
+        default_factory=list,
+        description="Evidence supporting the observed outcome.",
+    )
+
+    actual_drivers: list[str] = Field(
+        default_factory=list,
+        description="Factors that actually influenced the outcome.",
+    )
 
 
 class Evaluation(BaseModel):
+    """Evaluation of a prediction against the observed reality."""
+
     model_config = ConfigDict(str_strip_whitespace=True)
 
-    prediction_id: str = Field(..., min_length=1)
-    prediction_version: int | None = None
-    actual_value: float | None = None
-    actual_direction: str = Field(..., min_length=1)
-    direction_score: float = Field(..., ge=0.0, le=1.0)
-    magnitude_score: float = Field(..., ge=0.0, le=1.0)
-    reason_score: float | None = Field(default=None, ge=0.0, le=1.0)
-    matching_score: float = Field(..., ge=0.0, le=100.0)
-    reasoning: str = Field(..., min_length=1)
-    evaluated_at: datetime = Field(default_factory=datetime.utcnow)
-    actual_drivers: list[str] | None = None
-    evaluation_status: str = "RESOLVED"
+    prediction_id: str = Field(
+        ...,
+        min_length=1,
+        description="Identifier of the evaluated prediction.",
+    )
 
-    @field_validator("actual_direction", mode="before")
-    @classmethod
-    def normalize_direction(cls, value):
-        if not isinstance(value, str):
-            return value
-        value = value.strip().upper()
-        if value in {"UP", "DOWN", "FLAT"}:
-            return value
-        raise ValueError("actual_direction must be one of: UP, DOWN, FLAT")
+    prediction_version: int | None = Field(
+        default=None,
+        description="Version of the evaluated prediction.",
+    )
+
+    actual_value: float | None = Field(
+        default=None,
+        description="Observed value of the prediction target.",
+    )
+
+    actual_direction: Direction = Field(
+        ...,
+        description="Observed direction of the outcome.",
+    )
+
+    direction_score: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Score measuring how well the predicted direction matched reality.",
+    )
+
+    magnitude_score: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Score measuring how close the predicted magnitude was to reality.",
+    )
+
+    reason_score: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Score measuring how well the predicted reasoning was supported by reality.",
+    )
+
+    matching_score: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Overall prediction-reality matching score.",
+    )
+
+    reasoning: str = Field(
+        ...,
+        min_length=1,
+        description="Explanation of the evaluation result.",
+    )
+
+    evaluated_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="Time when the prediction was evaluated.",
+    )
+
+    actual_drivers: list[str] = Field(
+        default_factory=list,
+        description="Drivers that actually affected the outcome.",
+    )
+
+    evaluation_status: EvaluationStatus = Field(
+        default=EvaluationStatus.RESOLVED,
+        description="Lifecycle status of the evaluation.",
+    )
 
 
+class Evaluation_LLMOutput(BaseModel):
+    """
+    Structured output generated by the LLM when evaluating
+    a prediction against reality.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    direction_score: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Score for the direction match.",
+    )
+
+    magnitude_score: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Score for the magnitude match.",
+    )
+
+    reason_score: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Score for how well the predicted reasoning was supported.",
+    )

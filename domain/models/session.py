@@ -2,6 +2,8 @@ from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
 
+from domain.models.prediction import Prediction
+
 class Thesis(BaseModel):
     """Represents a thesis in the session."""
 
@@ -9,6 +11,7 @@ class Thesis(BaseModel):
     thinking: str # The reasoning or thought process behind the thesis
     
     prediction: str # The prediction of what will happen next based on the thesis
+    prediction_record: Optional[Prediction] = None
     evidence: Optional[List[str]] = None # Which evidence supports the thesis
     counter_evidence: Optional[List[str]] = None  # Which evidence contradicts the thesis
     confidence: float

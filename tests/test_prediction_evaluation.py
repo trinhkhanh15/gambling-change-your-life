@@ -186,3 +186,55 @@ def test_reality_model_and_matching_score_input_validation():
     assert reality.actual_direction == "UP"
     assert reality.target == "AAPL"
 
+
+def test_llm_comparison_creates_new_version_when_requested():
+    service = PredictionService()
+    now = datetime.utcnow()
+    first = Prediction(
+        id="pred-1",
+        thesis_id="thesis-1",
+        version=1,
+        target="AAPL",
+        direction=PredictionDirection.UP,
+        horizon_start=date(2026, 10, 1),
+        horizon_end=date(2026, 12, 31),
+        reasoning="Demand is accelerating.",
+        confidence=0.7,
+        created_at=now,
+        information_cutoff=now,
+    )
+    service._persist_prediction(first)
+
+    class MockLLM:
+        def __init__(self):
+            self.calls = 0
+
+        def generate_response(self, system_prompt: str, response_model=None):
+            self.calls += 1
+            if response_model.__name__ == "PredictionLLMOutput":
+                return {
+                    "target": "AAPL",
+                    "direction": "DOWN",
+                    "horizon_start": "2026-10-01",
+                    "horizon_end": "2026-12-31",
+                    "reasoning": "Demand is weakening.",
+                    "confidence": 0.6,
+                }
+            return {
+                "change": "major_change",
+                "should_create_new_version": True,
+                "changed_fields": ["direction", "reasoning"],
+                "explanation": "The expected direction and thesis changed.",
+            }
+
+    service.llm = MockLLM()
+    analysis = FakeAnalysisOutput(thesis_id="thesis-1", information_cutoff=datetime.utcnow())
+
+    new_prediction = service.generate(analysis, existing_prediction=first)
+
+    assert new_prediction.version == 2
+    assert new_prediction.direction == PredictionDirection.DOWN
+    assert first.status == PredictionStatus.SUPERSEDED
+    assert len(service.predictions) == 2
+    assert service.llm.calls == 2
+
