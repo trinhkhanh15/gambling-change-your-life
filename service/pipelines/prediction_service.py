@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Any
+from domain.models.analyse_layer import AnalysisOutput
 
 from infra.llm.openai import OpenAIClient
 
@@ -28,7 +28,7 @@ class PredictionService:
         self.predictions: list[Prediction] = []
 
     @staticmethod
-    def _serialize(data: Any) -> str:
+    def _serialize(data: AnalysisOutput | Prediction) -> str:
         """Serialize Pydantic models or regular objects to JSON."""
         if hasattr(data, "model_dump"):
             data = data.model_dump(mode="json")
@@ -39,7 +39,7 @@ class PredictionService:
 
     def _get_llm_response(
         self,
-        analysis_output: Any,
+        analysis_output: AnalysisOutput,
         existing_prediction: Prediction | None = None,
     ) -> PredictionLLMOutput:
         if self.llm is None:
@@ -54,8 +54,8 @@ class PredictionService:
         )
 
         prompt = self.prompt_renderer.prediction_prompt(
-            analysis=self._serialize(analysis_output),
-            thesis_context=existing_prediction_json or "No existing prediction; create the first version.",
+            analysis_output=self._serialize(analysis_output),
+            existing_prediction=existing_prediction_json,
         )
 
         return self.llm.generate_response(
@@ -91,7 +91,7 @@ class PredictionService:
 
     def _build_prediction(
         self,
-        analysis_output: Any,
+        analysis_output: AnalysisOutput,
         llm_output: PredictionLLMOutput,
         existing_prediction: Prediction | None,
     ) -> Prediction:
@@ -150,7 +150,7 @@ class PredictionService:
 
     def generate(
         self,
-        analysis_output: Any,
+        analysis_output: AnalysisOutput,
         existing_prediction: Prediction | None = None,
     ) -> Prediction:
         self._validate_analysis_output(analysis_output)
@@ -189,7 +189,7 @@ class PredictionService:
 
     @staticmethod
     def _validate_analysis_output(
-        analysis_output: Any,
+        analysis_output: AnalysisOutput,
     ) -> None:
         if analysis_output is None:
             raise AnalysisOutputError(
@@ -204,7 +204,7 @@ class PredictionService:
     def update(
         self,
         existing_prediction: Prediction,
-        analysis_output: Any,
+        analysis_output: AnalysisOutput,
     ) -> Prediction:
         return self.generate(
             analysis_output=analysis_output,

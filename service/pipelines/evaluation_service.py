@@ -96,8 +96,8 @@ def calculate_matching_score(
         total_weight = direction_weight + magnitude_weight
 
         score = (
-            direction_score ** (direction_weight / total_weight)
-            * magnitude_score ** (magnitude_weight / total_weight)
+            direction_score * direction_weight / total_weight
+            + magnitude_score * magnitude_weight / total_weight
         )
 
     else:
@@ -111,9 +111,9 @@ def calculate_matching_score(
         )
 
         score = (
-            direction_score ** (direction_weight / total_weight)
-            * magnitude_score ** (magnitude_weight / total_weight)
-            * reason_score ** (reason_weight / total_weight)
+            direction_score * direction_weight / total_weight
+            + magnitude_score * magnitude_weight / total_weight 
+            + reason_score * reason_weight / total_weight
         )
 
     return max(0.0, min(1.0, score))
