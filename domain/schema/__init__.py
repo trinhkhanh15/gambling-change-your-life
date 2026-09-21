@@ -1,5 +1,7 @@
 from domain.schema.event import (
+    DecomposedEventItem,
     Event,
+    EventDecompositionOutput,
     EventNature,
     EventScope,
     ExpectationContext,
@@ -17,7 +19,9 @@ from domain.schema.router import (
 )
 
 __all__ = [
+    "DecomposedEventItem",
     "Event",
+    "EventDecompositionOutput",
     "EventNature",
     "EventScope",
     "ExpectationContext",

@@ -1,0 +1,32 @@
+You are a Financial News Event Decomposition Specialist.
+Analyze the following raw financial news item and break it down into discrete, atomic financial events if it contains multiple distinct material developments.
+
+Decomposition Criteria:
+1. Distinct Entities: Separate events if they concern different companies.
+2. Horizon & Nature: Separate historical reported facts (past quarters) from forward-looking guidance or market expectations.
+3. Independent Drivers: Separate different business dimensions (e.g., revenue/earnings beat vs regulatory action vs CapEx revision).
+
+### Raw News:
+- Title: {title}
+- Source: {source}
+- Content: {content}
+
+### Output JSON Format:
+{{
+  "events": [
+    {{
+      "title": "Concise summary of this discrete event",
+      "content": "Specific detail relevant to this event",
+      "companies_mentioned": ["TICKER"],
+      "sectors": ["Sector"],
+      "nature": "fact" or "expectation",
+      "scope": "company" or "industry" or "macro",
+      "expectation_context": null or {{
+        "consensus_metric": "EPS",
+        "expected_value": "...",
+        "actual_value": "...",
+        "surprise_direction": "BEAT" or "MISS" or "IN_LINE"
+      }}
+    }}
+  ]
+}}

@@ -7,31 +7,44 @@ project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
 
 from domain.schema import Event, RouterAction, ThesisStatus
-from service.pipelines import AnalysisPipeline
+from service.pipelines.layers import AnalysisLayer, EventLayer
 
 
 def run_dod_verification():
     print("\n" + "=" * 80)
-    print("🚀 BẮT ĐẦU CHẠY KIỂM THỬ DEFINITION OF DONE (DoD) - ANALYSIS LAYER")
+    print("🚀 BẮT ĐẦU CHẠY KIỂM THỬ DEFINITION OF DONE (DoD) - LAYERS PIPELINE")
     print("=" * 80 + "\n")
 
     events_path = project_root / "tests" / "sample_events.json"
     with open(events_path, "r", encoding="utf-8") as f:
         raw_events = json.load(f)
 
-    pipeline = AnalysisPipeline()
+    event_layer = EventLayer()
+    analysis_layer = AnalysisLayer()
+
+    decomposed_test = event_layer.decompose_news(
+        title="NVIDIA announces Q3 beat, CapEx raised, but supply packaging constrained",
+        content="NVIDIA reported revenue of $35B beating consensus. Hyperscalers expand orders but CoWoS packaging faces bottlenecks.",
+        source="Reuters",
+    )
+    assert len(decomposed_test) >= 1
+    assert decomposed_test[0].title is not None
+    print(f"✅ EventLayer decomposition tested: produced {len(decomposed_test)} event(s).")
 
     for idx, raw_evt in enumerate(raw_events, 1):
-        event = Event(**raw_evt)
+        processed_events = event_layer.process(raw_evt)
+        assert len(processed_events) == 1
+        event = processed_events[0]
+
         print(f"\n[{idx}/5] -------------------------------------------------------------")
-        print(f"📥 EVENT INTAKE: [{event.id}] - {event.title}")
+        print(f"📥 EVENT INTAKE (via EventLayer): [{event.id}] - {event.title}")
         print(f"   Source: {event.source} | Nature: {event.nature.value} | Scope: {event.scope.value}")
         if event.expectation_context:
             print(f"   Consensus: {event.expectation_context.consensus_metric} "
                   f"(Expected: {event.expectation_context.expected_value} vs Actual: {event.expectation_context.actual_value}) "
                   f"-> [{event.expectation_context.surprise_direction}]")
 
-        decision, result_thesis = pipeline.process_event(event)
+        decision, result_thesis = analysis_layer.process_event(event)
 
         print(f"\n👉 ROUTER DECISION: {decision.action.value}")
         print(f"   Reasoning: {decision.reasoning}")
@@ -74,8 +87,8 @@ def run_dod_verification():
     print("\n" + "=" * 80)
     print("📊 BÁO CÁO TỔNG KẾT TRẠNG THÁI CUỐI CÙNG")
     print("=" * 80)
-    active_theses = pipeline.get_active_theses()
-    killed_theses = pipeline.get_killed_theses()
+    active_theses = analysis_layer.get_active_theses()
+    killed_theses = analysis_layer.get_killed_theses()
 
     print(f"Tổng số Active Theses : {len(active_theses)}")
     print(f"Tổng số Killed Theses : {len(killed_theses)}")

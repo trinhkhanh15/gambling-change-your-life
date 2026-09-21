@@ -10,6 +10,7 @@ class PromptRenderer:
     _ROUTER_PROMPT = _DOMAIN_PATH / "router.txt"
     _GENERATE_THESIS_PROMPT = _DOMAIN_PATH / "generate_thesis.txt"
     _UPDATE_KILL_THESIS_PROMPT = _DOMAIN_PATH / "update_kill_thesis.txt"
+    _DECOMPOSE_EVENT_PROMPT = _DOMAIN_PATH / "decompose_event.txt"
 
     @staticmethod
     def _render_prompt(template: str, **context: Any) -> str:
@@ -39,4 +40,8 @@ class PromptRenderer:
 
     def update_kill_thesis_prompt(self, **context: Any) -> str:
         template = self._UPDATE_KILL_THESIS_PROMPT.read_text(encoding="utf-8")
+        return self._render_prompt(template, **context)
+
+    def decompose_event_prompt(self, **context: Any) -> str:
+        template = self._DECOMPOSE_EVENT_PROMPT.read_text(encoding="utf-8")
         return self._render_prompt(template, **context)

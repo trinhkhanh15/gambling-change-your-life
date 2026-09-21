@@ -33,3 +33,18 @@ class Event(BaseModel):
     nature: EventNature = Field(..., description="Bản chất tin tức: fact hay expectation")
     scope: EventScope = Field(..., description="Phạm vi tác động: company, industry, macro")
     expectation_context: Optional[ExpectationContext] = Field(None, description="Bối cảnh kỳ vọng để phát hiện surprise")
+
+
+class DecomposedEventItem(BaseModel):
+    title: str = Field(...)
+    content: str = Field(...)
+    companies_mentioned: List[str] = Field(default_factory=list)
+    sectors: List[str] = Field(default_factory=list)
+    nature: EventNature = EventNature.FACT
+    scope: EventScope = EventScope.COMPANY
+    expectation_context: Optional[ExpectationContext] = None
+
+
+class EventDecompositionOutput(BaseModel):
+    events: List[DecomposedEventItem] = Field(default_factory=list)
+
