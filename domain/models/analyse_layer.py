@@ -8,9 +8,18 @@ class AnalyseInput(BaseModel):
     thinking: str
     research_data: Dict[str, str]
 
+
+class Thesis(BaseModel):
+    """Represents a thesis generated from the analysis layer."""
+    id: str
+    target: str
+    statement: str
+
+
 class AnalyseOutput(BaseModel):
     """Represents the output of the analysis layer."""
 
+    thesis_id : str
     prediction: str
     evidence: Optional[List[str]] = None
     counter_evidence: Optional[List[str]] = None

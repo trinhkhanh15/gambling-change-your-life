@@ -20,10 +20,10 @@ Evaluate exactly three dimensions:
 - contradict: the actual outcome contradicts the predicted reasoning. get 0.0 score
 
 Prediction: 
-{Prediction}
+{prediction}
 
 Reality: 
-{Reality}
+{reality}
 
 Compare the prediction against the reality and evaluate:
 - direction

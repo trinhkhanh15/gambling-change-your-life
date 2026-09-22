@@ -10,6 +10,7 @@ class PromptRenderer:
     _ANALYSE_PROMPT = _DOMAIN_PATH / "analyse.txt"
     _PREDICTION_PROMPT = _DOMAIN_PATH / "prediction.txt"
     _COMPARE_PREDICTION_PROMPT = _DOMAIN_PATH / "compare_prediction.txt"
+    _EVALUATION_PROMPT = _DOMAIN_PATH / "evaluate.txt"
 
     @staticmethod
     def _render_prompt(template: str, **context: Any) -> str:

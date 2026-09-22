@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from domain.models.analyse_layer import AnalysisOutput
+from domain.models.analyse_layer import AnalyseOutput, Thesis
 
 from infra.llm.openai import OpenAIClient
 
@@ -13,6 +13,7 @@ from domain.models.prediction import (
     PredictionComparisonLLMOutput,
     PredictionLLMOutput,
     PredictionStatus,
+    PredictionChange
 )
 from service.shared.prompt_renderer import PromptRenderer
 
@@ -28,7 +29,7 @@ class PredictionService:
         self.predictions: list[Prediction] = []
 
     @staticmethod
-    def _serialize(data: AnalysisOutput | Prediction) -> str:
+    def _serialize(data: AnalyseOutput | Thesis | Prediction) -> str:
         """Serialize Pydantic models or regular objects to JSON."""
         if hasattr(data, "model_dump"):
             data = data.model_dump(mode="json")
@@ -39,9 +40,10 @@ class PredictionService:
 
     def _get_llm_response(
         self,
-        analysis_output: AnalysisOutput,
+        analysis_output: AnalyseOutput,
         existing_prediction: Prediction | None = None,
     ) -> PredictionLLMOutput:
+
         if self.llm is None:
             raise LLMGenerationError(
                 "No LLM client configured for prediction generation"
@@ -54,14 +56,16 @@ class PredictionService:
         )
 
         prompt = self.prompt_renderer.prediction_prompt(
-            analysis_output=self._serialize(analysis_output),
+            analysis=self._serialize(analysis_output),
             existing_prediction=existing_prediction_json,
         )
 
-        return self.llm.generate_response(
+        response = self.llm.generate_response(
             system_prompt=prompt,
             response_model=PredictionLLMOutput,
         )
+
+        return PredictionLLMOutput.model_validate(response)
 
     def _compare_predictions(
         self,
@@ -78,20 +82,22 @@ class PredictionService:
             new_prediction=self._serialize(new_prediction),
         )
 
-        return self.llm.generate_response(
+        response = self.llm.generate_response(
             system_prompt=prompt,
             response_model=PredictionComparisonLLMOutput,
         )
+
+        return PredictionComparisonLLMOutput.model_validate(response)
 
     @staticmethod
     def _should_create_new_version(
         comparison: PredictionComparisonLLMOutput,
     ) -> bool:
-        return comparison.should_create_new_version
+        return comparison.should_create_new_version and comparison.change == PredictionChange.MAJOR_CHANGE
 
     def _build_prediction(
         self,
-        analysis_output: AnalysisOutput,
+        analysis_output: AnalyseOutput,
         llm_output: PredictionLLMOutput,
         existing_prediction: Prediction | None,
     ) -> Prediction:
@@ -150,15 +156,15 @@ class PredictionService:
 
     def generate(
         self,
-        analysis_output: AnalysisOutput,
+        analysis_output: AnalyseOutput,
         existing_prediction: Prediction | None = None,
     ) -> Prediction:
         self._validate_analysis_output(analysis_output)
 
         try:
             llm_output = self._get_llm_response(
-                analysis_output,
-                existing_prediction,
+                analysis_output=analysis_output,
+                existing_prediction=existing_prediction,
             )
         except (TypeError, ValueError, AttributeError) as exc:
             raise AnalysisOutputError(
@@ -189,7 +195,7 @@ class PredictionService:
 
     @staticmethod
     def _validate_analysis_output(
-        analysis_output: AnalysisOutput,
+        analysis_output: AnalyseOutput,
     ) -> None:
         if analysis_output is None:
             raise AnalysisOutputError(
@@ -204,7 +210,7 @@ class PredictionService:
     def update(
         self,
         existing_prediction: Prediction,
-        analysis_output: AnalysisOutput,
+        analysis_output: AnalyseOutput,
     ) -> Prediction:
         return self.generate(
             analysis_output=analysis_output,

@@ -1,6 +1,17 @@
 You are a financial prediction engine.
 
 Given the current thesis and analysis:
+
+
+ANALYSIS:
+{analysis}
+
+EXISTING PREDICTION:
+{existing_prediction}
+
+Your task is to create a new testable prediction based on the thesis
+and the supporting analysis.
+
 - identify the observable target
 - identify the metric
 - determine the expected direction
@@ -18,16 +29,14 @@ The model must distinguish:
 3. what new information changes relative to expectations
 
 Do not force game-theoretic reasoning when it is not relevant.
+
 The prediction must be testable against observable reality.
+
 The model must NOT claim that a prediction is already correct or incorrect.
+
 The model must return valid JSON matching the required schema.
 
 Return JSON with fields matching this schema:
-target, metrics, direction, horizon_start, horizon_end, baseline, reasoning,
-predicted_drivers, confidence, resolution_criteria.
-
-Analysis context:
-{analysis}
-
-Thesis context:
-{thesis_context}
+target, metrics, direction, horizon_start, horizon_end,
+baseline, reasoning, predicted_drivers, confidence,
+resolution_criteria.

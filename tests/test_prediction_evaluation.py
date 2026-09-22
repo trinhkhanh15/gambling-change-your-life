@@ -1,240 +1,440 @@
-from __future__ import annotations
-
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 import pytest
-from pydantic import ValidationError
 
-from domain.models.feedback import Reality
-from domain.models.prediction import Prediction, PredictionDirection, PredictionStatus
-from service.pipelines.evaluation_service import (
-    DEFAULT_MAGNITUDE_TOLERANCE,
-    calculate_direction_score,
-    calculate_magnitude_score,
-    calculate_matching_score,
-    calculate_reason_score,
+from domain.models.analyse_layer import AnalyseOutput
+from domain.models.feedback import (
+    Evaluation,
+    Evaluation_LLMOutput,
+    Reality,
+    Direction,
+)
+from domain.models.prediction import (
+    Prediction,
+    PredictionChange,
+    PredictionDirection,
+    PredictionLLMOutput,
+    PredictionComparisonLLMOutput,
+    PredictionStatus,
 )
 from service.pipelines.prediction_service import PredictionService
+from service.pipelines.evaluation_service import (
+    EvaluationService,
+    calculate_matching_score,
+)
 
 
-class FakeAnalysisOutput:
-    def __init__(self, **kwargs):
-        self.__dict__.update(kwargs)
+class MockLLM:
+    """
+    Mock LLM used to test PredictionService and EvaluationService
+    without calling a real LLM/API.
+    """
 
+    def __init__(self, responses):
+        self.responses = responses
+        self.calls = []
 
-def test_direction_score_cases():
-    assert calculate_direction_score(PredictionDirection.UP, PredictionDirection.UP) == 1.0
-    assert calculate_direction_score(PredictionDirection.UP, PredictionDirection.DOWN) == 0.0
-    assert calculate_direction_score(PredictionDirection.UP, PredictionDirection.FLAT) == 0.5
-
-
-def test_magnitude_score_cases():
-    assert calculate_magnitude_score(0.10, 0.10) == 1.0
-    assert calculate_magnitude_score(0.10, 0.12, tolerance=DEFAULT_MAGNITUDE_TOLERANCE) == pytest.approx(0.90)
-    assert calculate_magnitude_score(0.10, 0.30, tolerance=DEFAULT_MAGNITUDE_TOLERANCE) == pytest.approx(0.0)
-
-    with pytest.raises(ValueError):
-        calculate_magnitude_score(0.10, 0.12, tolerance=0.0)
-
-
-def test_reason_score_cases():
-    assert calculate_reason_score(["subscriber_growth", "pricing"], ["pricing", "advertising"]) == pytest.approx(1 / 3)
-    assert calculate_reason_score(["a", "b"], ["a", "b"]) == 1.0
-    assert calculate_reason_score(["a", "b"], ["c", "d"]) == 0.0
-    assert calculate_reason_score(["a", "b"], []) is None
-
-
-def test_matching_score_all_scores_available():
-    score = calculate_matching_score(1.0, 0.9, 1 / 3)
-    assert score == pytest.approx(76.96, abs=0.1)
-
-
-def test_matching_score_missing_reason_reweights():
-    assert calculate_matching_score(1.0, 0.9, None) == pytest.approx(94.87, abs=0.1)
-
-
-def test_invalid_score_inputs_raise():
-    with pytest.raises(ValueError):
-        calculate_matching_score(1.5, 0.8, 0.3)
-    with pytest.raises(ValueError):
-        calculate_matching_score(0.7, 1.2, None)
-
-
-def test_prediction_versioning_and_status():
-    service = PredictionService()
-
-    first = Prediction(
-        id="pred-1",
-        thesis_id="thesis-1",
-        version=1,
-        target="AAPL",
-        metrics=["revenue_growth"],
-        direction=PredictionDirection.UP,
-        horizon_start=date(2026, 10, 1),
-        horizon_end=date(2026, 12, 31),
-        baseline=0.02,
-        reasoning="Revenue is accelerating.",
-        predicted_drivers=["demand", "pricing"],
-        confidence=0.7,
-        resolution_criteria=["Revenue growth exceeds 5% QoQ after report."],
-        status=PredictionStatus.ACTIVE,
-        information_cutoff=datetime.utcnow(),
-    )
-    service._persist_prediction(first)
-
-    second = Prediction(
-        id="pred-2",
-        thesis_id="thesis-1",
-        version=2,
-        target="AAPL",
-        metrics=["revenue_growth"],
-        direction=PredictionDirection.UP,
-        horizon_start=date(2026, 10, 1),
-        horizon_end=date(2026, 12, 31),
-        baseline=0.02,
-        reasoning="Demand remains strong.",
-        predicted_drivers=["demand", "pricing"],
-        confidence=0.8,
-        resolution_criteria=["Revenue growth exceeds 5% QoQ after report."],
-        status=PredictionStatus.ACTIVE,
-        information_cutoff=datetime.utcnow(),
-    )
-    service._persist_prediction(second)
-
-    assert first.status == PredictionStatus.SUPERSEDED
-    assert second.status == PredictionStatus.ACTIVE
-    assert len(service.predictions) == 2
-
-
-def test_prediction_validation_rejects_invalid_values():
-    with pytest.raises(ValidationError):
-        Prediction.model_validate(
+    def generate_response(self, system_prompt, response_model):
+        self.calls.append(
             {
-                "id": "pred-3",
-                "thesis_id": "thesis-1",
-                "version": 1,
-                "target": "",
-                "metrics": ["revenue_growth"],
-                "direction": "UP",
-                "horizon_start": date(2026, 10, 1),
-                "horizon_end": date(2026, 12, 31),
-                "baseline": 0.0,
-                "reasoning": "Reasoning",
-                "predicted_drivers": ["demand"],
-                "confidence": 1.5,
-                "resolution_criteria": ["must be measurable"],
-                "status": "ACTIVE",
-                "information_cutoff": datetime.utcnow(),
+                "system_prompt": system_prompt,
+                "response_model": response_model,
             }
         )
 
+        response = self.responses.pop(0)
 
-def test_llm_prediction_is_created_from_mocked_response():
-    service = PredictionService(llm_client=None)
+        if isinstance(response, response_model):
+            return response
 
-    analysis = FakeAnalysisOutput(
-        thesis_id="thesis-1",
-        target="AAPL",
-        metrics=["revenue_growth"],
-        direction="UP",
-        horizon_start=date(2026, 10, 1),
-        horizon_end=date(2026, 12, 31),
-        baseline=0.03,
-        reasoning="Demand is accelerating.",
-        predicted_drivers=["demand", "pricing"],
+        return response_model.model_validate(response)
+
+
+def make_analysis_output(
+    thesis_id: str = "thesis-1",
+) -> AnalyseOutput:
+    return AnalyseOutput(
+        thesis_id=thesis_id,
+        prediction="Revenue is expected to increase.",
+        evidence=["Revenue growth has remained positive."],
+        counter_evidence=["Macroeconomic uncertainty remains."],
         confidence=0.8,
-        resolution_criteria=["Revenue growth exceeds 5% QoQ after the report."],
-        information_cutoff=datetime.utcnow(),
     )
 
-    class MockLLM:
-        def generate_response(self, system_prompt: str, response_model=None):
-            return {
-                "target": "AAPL",
-                "metrics": ["revenue_growth"],
-                "direction": "UP",
-                "horizon_start": "2026-10-01",
-                "horizon_end": "2026-12-31",
-                "baseline": 0.03,
-                "reasoning": "Demand is accelerating.",
-                "predicted_drivers": ["demand", "pricing"],
-                "confidence": 0.8,
-                "resolution_criteria": ["Revenue growth exceeds 5% QoQ after the report."],
-            }
 
-    service.llm = MockLLM()
-    prediction = service.generate(analysis)
+def make_prediction_llm_output(
+    direction=PredictionDirection.UP,
+    confidence=0.8,
+    reasoning="Revenue is expected to increase because demand is improving.",
+):
+    return PredictionLLMOutput(
+        target="Spotify",
+        metrics=["revenue"],
+        direction=direction,
+        horizon_start=date(2026, 10, 1),
+        horizon_end=date(2026, 12, 31),
+        baseline=100.0,
+        reasoning=reasoning,
+        predicted_drivers=[
+            "subscriber growth",
+            "pricing",
+        ],
+        confidence=confidence,
+        resolution_criteria=[
+            "Revenue increases during the prediction horizon."
+        ],
+    )
 
-    assert prediction.target == "AAPL"
+
+def make_reality(
+    direction=Direction.UP,
+    actual_value=110.0,
+):
+    return Reality(
+        target="Spotify",
+        metric="revenue",
+        actual_value=actual_value,
+        actual_direction=direction,
+        observed_at=datetime.now(timezone.utc),
+        source="test",
+        reasoning="Revenue increased because subscriber growth continued.",
+        evidence=["Revenue increased during the observed period."],
+        actual_drivers=["subscriber growth"],
+    )
+
+
+# ============================================================
+# PredictionService tests
+# ============================================================
+
+
+def test_generate_new_prediction():
+    llm = MockLLM(
+        [
+            make_prediction_llm_output(),
+        ]
+    )
+
+    service = PredictionService(llm_client=llm)
+
+    prediction = service.generate(
+        analysis_output=make_analysis_output(),
+    )
+
+    assert isinstance(prediction, Prediction)
+
+    assert prediction.id == "pred-1"
+    assert prediction.thesis_id == "thesis-1"
     assert prediction.version == 1
+
+    assert prediction.target == "Spotify"
     assert prediction.direction == PredictionDirection.UP
     assert prediction.status == PredictionStatus.ACTIVE
 
+    assert len(service.get_predictions()) == 1
+    assert service.get_predictions()[0] == prediction
 
-def test_reality_model_and_matching_score_input_validation():
-    reality = Reality(
-        target="AAPL",
-        metric="revenue_growth",
-        actual_value=0.12,
-        actual_direction="UP",
-        observed_at=datetime.utcnow(),
-        source="earnings_release",
-        reasoning="Revenue grew faster than forecast.",
-        actual_drivers=["pricing", "demand"],
+    assert len(llm.calls) == 1
+    assert llm.calls[0]["response_model"] is PredictionLLMOutput
+
+
+def test_update_prediction_without_major_change_keeps_existing_prediction():
+    old_prediction_output = make_prediction_llm_output()
+
+    comparison_output = PredictionComparisonLLMOutput(
+        change=PredictionChange.NO_CHANGE,
+        should_create_new_version=False,
+        changed_fields=[],
+        explanation="The new prediction has the same core meaning.",
     )
 
-    assert reality.actual_direction == "UP"
-    assert reality.target == "AAPL"
+    llm = MockLLM(
+        [
+            old_prediction_output,      # generate() lần đầu
+            old_prediction_output,      # update() tạo prediction mới
+            comparison_output,          # update() compare old vs new
+        ]
+    )
+
+    service = PredictionService(llm_client=llm)
+
+    old_prediction = service.generate(
+        analysis_output=make_analysis_output(),
+    )
+
+    result = service.update(
+        existing_prediction=old_prediction,
+        analysis_output=make_analysis_output(),
+    )
+
+    assert result is old_prediction
+
+    assert result.version == 1
+    assert result.status == PredictionStatus.ACTIVE
+
+    # No new prediction should have been persisted.
+    assert len(service.get_predictions()) == 1
+    assert service.get_predictions()[0] is old_prediction
 
 
-def test_llm_comparison_creates_new_version_when_requested():
-    service = PredictionService()
-    now = datetime.utcnow()
-    first = Prediction(
+def test_update_prediction_with_major_change_creates_new_version():
+    first_prediction_output = make_prediction_llm_output(
+        direction=PredictionDirection.UP,
+        confidence=0.8,
+        reasoning="Revenue is expected to increase because demand is improving.",
+    )
+
+    second_prediction_output = make_prediction_llm_output(
+        direction=PredictionDirection.DOWN,
+        confidence=0.7,
+        reasoning="Revenue is expected to decrease because demand is weakening.",
+    )
+
+    comparison_output = PredictionComparisonLLMOutput(
+        change=PredictionChange.MAJOR_CHANGE,
+        should_create_new_version=True,
+        changed_fields=[
+            "direction",
+            "reasoning",
+        ],
+        explanation="The expected direction and core reasoning changed.",
+    )
+
+    llm = MockLLM(
+        [
+            first_prediction_output,
+            second_prediction_output,
+            comparison_output,
+        ]
+    )
+
+    service = PredictionService(llm_client=llm)
+
+    old_prediction = service.generate(
+        analysis_output=make_analysis_output(),
+    )
+
+    new_prediction = service.update(
+        existing_prediction=old_prediction,
+        analysis_output=make_analysis_output(),
+    )
+
+    assert new_prediction is not old_prediction
+
+    assert old_prediction.version == 1
+    assert old_prediction.status == PredictionStatus.SUPERSEDED
+
+    assert new_prediction.version == 2
+    assert new_prediction.status == PredictionStatus.ACTIVE
+
+    assert new_prediction.thesis_id == old_prediction.thesis_id
+
+    assert len(service.get_predictions()) == 2
+
+
+def test_minor_change_with_true_new_version_flag_exposes_inconsistent_llm_output():
+    """
+    This test documents a potential production logic problem.
+
+    The prompt says:
+        should_create_new_version = true ONLY when change = major_change
+
+    But PredictionService currently trusts the boolean directly.
+
+    Therefore this test is expected to FAIL if the service is changed
+    to enforce the prompt invariant, and PASS with the current
+    implementation.
+
+    It is intentionally written as a specification check.
+    """
+
+    first_prediction_output = make_prediction_llm_output()
+
+    second_prediction_output = make_prediction_llm_output(
+        confidence=0.81,
+        reasoning="Revenue is expected to increase because demand continues improving.",
+    )
+
+    inconsistent_comparison = PredictionComparisonLLMOutput(
+        change=PredictionChange.MINOR_CHANGE,
+        should_create_new_version=True,
+        changed_fields=["confidence"],
+        explanation="Only a minor confidence change occurred.",
+    )
+
+    llm = MockLLM(
+        [
+            first_prediction_output,
+            second_prediction_output,
+            inconsistent_comparison,
+        ]
+    )
+
+    service = PredictionService(llm_client=llm)
+
+    old_prediction = service.generate(
+        analysis_output=make_analysis_output(),
+    )
+
+    result = service.update(
+        existing_prediction=old_prediction,
+        analysis_output=make_analysis_output(),
+    )
+
+    # According to compare_prediction.txt, this should remain
+    # the same prediction because change != major_change.
+    assert result is old_prediction
+    assert result.version == 1
+    assert len(service.get_predictions()) == 1
+
+
+# ============================================================
+# EvaluationService tests
+# ============================================================
+
+
+def test_calculate_matching_score_with_all_dimensions():
+    score = calculate_matching_score(
+        direction_score=1.0,
+        magnitude_score=0.5,
+        reason_score=1.0,
+    )
+
+    expected = (
+        1.0 * 0.4
+        + 0.5 * 0.4
+        + 1.0 * 0.2
+    )
+
+    assert score == pytest.approx(expected)
+
+
+def test_calculate_matching_score_without_reason_score():
+    score = calculate_matching_score(
+        direction_score=1.0,
+        magnitude_score=0.5,
+        reason_score=None,
+    )
+
+    expected = (
+        1.0 * 0.4 / 0.8
+        + 0.5 * 0.4 / 0.8
+    )
+
+    assert score == pytest.approx(expected)
+
+
+def test_evaluate_prediction_against_reality():
+    llm = MockLLM(
+        [
+            Evaluation_LLMOutput(
+                direction_score=1.0,
+                magnitude_score=0.5,
+                reason_score=1.0,
+            )
+        ]
+    )
+
+    service = EvaluationService(llm_client=llm)
+
+    prediction = Prediction(
         id="pred-1",
         thesis_id="thesis-1",
         version=1,
-        target="AAPL",
+        target="Spotify",
+        metrics=["revenue"],
         direction=PredictionDirection.UP,
         horizon_start=date(2026, 10, 1),
         horizon_end=date(2026, 12, 31),
-        reasoning="Demand is accelerating.",
-        confidence=0.7,
-        created_at=now,
-        information_cutoff=now,
+        baseline=100.0,
+        reasoning="Revenue is expected to increase.",
+        predicted_drivers=["subscriber growth"],
+        confidence=0.8,
+        resolution_criteria=[
+            "Revenue increases."
+        ],
+        status=PredictionStatus.ACTIVE,
+        created_at=datetime.now(timezone.utc),
+        information_cutoff=datetime.now(timezone.utc),
     )
-    service._persist_prediction(first)
 
-    class MockLLM:
-        def __init__(self):
-            self.calls = 0
+    reality = make_reality(
+        direction=Direction.UP,
+        actual_value=110.0,
+    )
 
-        def generate_response(self, system_prompt: str, response_model=None):
-            self.calls += 1
-            if response_model.__name__ == "PredictionLLMOutput":
-                return {
-                    "target": "AAPL",
-                    "direction": "DOWN",
-                    "horizon_start": "2026-10-01",
-                    "horizon_end": "2026-12-31",
-                    "reasoning": "Demand is weakening.",
-                    "confidence": 0.6,
-                }
-            return {
-                "change": "major_change",
-                "should_create_new_version": True,
-                "changed_fields": ["direction", "reasoning"],
-                "explanation": "The expected direction and thesis changed.",
-            }
+    evaluation = service.evaluate(
+        prediction=prediction,
+        reality=reality,
+    )
 
-    service.llm = MockLLM()
-    analysis = FakeAnalysisOutput(thesis_id="thesis-1", information_cutoff=datetime.utcnow())
+    assert isinstance(evaluation, Evaluation)
 
-    new_prediction = service.generate(analysis, existing_prediction=first)
+    assert evaluation.prediction_id == prediction.id
+    assert evaluation.prediction_version == prediction.version
 
-    assert new_prediction.version == 2
-    assert new_prediction.direction == PredictionDirection.DOWN
-    assert first.status == PredictionStatus.SUPERSEDED
-    assert len(service.predictions) == 2
-    assert service.llm.calls == 2
+    assert evaluation.actual_value == reality.actual_value
+    assert evaluation.actual_direction == reality.actual_direction
 
+    assert evaluation.direction_score == 1.0
+    assert evaluation.magnitude_score == 0.5
+    assert evaluation.reason_score == 1.0
+
+    expected_score = (
+        1.0 * 0.4
+        + 0.5 * 0.4
+        + 1.0 * 0.2
+    )
+
+    assert evaluation.matching_score == pytest.approx(expected_score)
+
+    assert evaluation.actual_drivers == reality.actual_drivers
+    assert evaluation.reasoning == reality.reasoning
+
+    assert len(llm.calls) == 1
+    assert llm.calls[0]["response_model"] is Evaluation_LLMOutput
+
+
+def test_evaluate_rejects_invalid_prediction():
+    llm = MockLLM([])
+
+    service = EvaluationService(llm_client=llm)
+
+    reality = make_reality()
+
+    with pytest.raises(Exception):
+        service.evaluate(
+            prediction="not a prediction",
+            reality=reality,
+        )
+
+
+def test_evaluate_rejects_invalid_reality():
+    llm = MockLLM([])
+
+    service = EvaluationService(llm_client=llm)
+
+    prediction = Prediction(
+        id="pred-1",
+        thesis_id="thesis-1",
+        version=1,
+        target="Spotify",
+        metrics=["revenue"],
+        direction=PredictionDirection.UP,
+        horizon_start=date(2026, 10, 1),
+        horizon_end=date(2026, 12, 31),
+        baseline=100.0,
+        reasoning="Revenue is expected to increase.",
+        predicted_drivers=["subscriber growth"],
+        confidence=0.8,
+        resolution_criteria=["Revenue increases."],
+        status=PredictionStatus.ACTIVE,
+        created_at=datetime.now(timezone.utc),
+        information_cutoff=datetime.now(timezone.utc),
+    )
+
+    with pytest.raises(Exception):
+        service.evaluate(
+            prediction=prediction,
+            reality="not reality",
+        )

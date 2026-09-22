@@ -15,7 +15,9 @@ from domain.models.feedback import (
     Evaluation_LLMOutput,
 )
 from domain.models.prediction import Prediction
-from domain.prompts import evaluation_prompt
+from domain.prompts import load_prompt
+
+evaluation_prompt = load_prompt("evaluate.txt")
 
 
 DIRECTION_WEIGHT = 0.4
@@ -52,7 +54,7 @@ def get_llm_response(
             "No LLM client configured for evaluation generation"
         )
 
-    prompt = evaluation_prompt(
+    prompt = evaluation_prompt.format(
         prediction=json.dumps(
             prediction.model_dump(mode="json"),
             default=str,
