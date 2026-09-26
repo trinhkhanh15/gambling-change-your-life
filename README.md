@@ -47,3 +47,24 @@ Confidence:
 0.68
 ```
 
+## Runnable integration slice
+
+The current implementation connects the shared contracts and adapters through
+`Event -> Thesis -> Prediction -> Reality -> Evaluation`. Run the deterministic
+demo with:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements-dev.txt
+python -m app.demo
+python -m pytest -q
+```
+
+The demo uses a mock LLM, a fixture source, and JSON persistence under
+`data_storage/`. It creates a synthetic reality record after the prediction
+horizon; it verifies plumbing and scoring contracts, not forecasting quality.
+
+`OpenAIAdapter` and `TavilySourceAdapter` implement the same ports used by the
+mock pipeline. They require `OPENAI_API_KEY` and `TAVILY_API_KEY` respectively
+when selected by a caller.
