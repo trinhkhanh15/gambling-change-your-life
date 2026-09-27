@@ -1,94 +1,140 @@
+from __future__ import annotations
+
 import json
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional, Type, TypeVar, Union
+from urllib.parse import quote
 
-class JsonStorage:
+from pydantic import BaseModel, ValidationError
+
+T = TypeVar("T", bound=BaseModel)
+
+
+class ArchiveError(Exception):
+    """Base exception for storage-layer errors."""
+
+
+class SchemaParseError(ArchiveError):
+    """Raised when raw data cannot be validated against the requested schema."""
+
+
+class RecordNotFoundError(ArchiveError):
+    """Raised when a required record does not exist."""
+
+
+class JsonArchive:
     """
-    Local JSON Persistence Layer (No Database).
-    
-    QUY TẮC DỮ LIỆU BẮT BUỘC (STRICT JS/JSON ONLY):
-    - KHÔNG nhận hoặc xử lý các Pydantic model hay custom class.
-    - Tất cả input/output đều là kiểu dữ liệu thuần JS/JSON (Dict, List, str, int, float, bool).
-    - Phía gọi (Pipeline/Model) phải tự convert model thành Dict/List (ví dụ: .model_dump()) 
-      trước khi nạp vào Storage.
+    JSON-file storage. No database.
+    Layout: <base_dir>/<collection>/<record_id>.json
     """
 
-    def __init__(self, storage_dir: str = "data_storage"):
-        """
-        Khởi tạo thư mục lưu trữ file JSON.
-        
-        Args:
-            storage_dir (str): Đường dẫn thư mục chứa file.
-        """
-        self._storage_dir = Path(storage_dir)
-        self._storage_dir.mkdir(parents=True, exist_ok=True)
+    def __init__(self, base_dir: Union[str, Path] = "data"):
+        self.base_dir = Path(base_dir)
+        self.base_dir.mkdir(parents=True, exist_ok=True)
 
-    def save_event_history(self, event_data: Dict[str, Any], filename: str = "event_history.json") -> bool:
-        """
-        Lưu/Ghi nối (append) dữ liệu sự kiện (event history) vào file JSON.
+    # ---------- parsing ----------
 
-        Args:
-            event_data (Dict[str, Any]): Dữ liệu sự kiện thuần JS/JSON.
-            filename (str): Tên file lưu trữ sự kiện.
+    def parse_json_to_schema(
+        self,
+        data: Union[Dict[str, Any], str],
+        model: Type[T],
+    ) -> T:
+        """Validate raw dict or JSON string into the given Pydantic model."""
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except json.JSONDecodeError as exc:
+                raise SchemaParseError(
+                    f"Invalid JSON for {model.__name__}: {exc}"
+                ) from exc
 
-        Returns:
-            bool: True nếu ghi file thành công, False nếu thất bại.
+        try:
+            return model.model_validate(data)
+        except ValidationError as exc:
+            raise SchemaParseError(
+                f"Data does not match schema {model.__name__}: {exc}"
+            ) from exc
 
-        // Task:
-        - Đọc danh sách sự kiện hiện có từ file (nếu chưa có file thì tạo mảng rỗng `[]`).
-        - Nối `event_data` vào danh sách.
-        - Ghi đè lại toàn bộ mảng vào file với `indent=4` và `ensure_ascii=False`.
-        """
-        pass
+    # ---------- path helpers ----------
 
-    def load_event_history(self, filename: str = "event_history.json") -> List[Dict[str, Any]]:
-        """
-        Đọc toàn bộ lịch sử sự kiện từ file JSON.
+    def _collection_dir(self, collection: str) -> Path:
+        path = self.base_dir / collection
+        path.mkdir(parents=True, exist_ok=True)
+        return path
 
-        Args:
-            filename (str): Tên file sự kiện cần đọc.
+    def _record_path(self, collection: str, record_id: str) -> Path:
+        safe_id = quote(record_id, safe="")
+        return self._collection_dir(collection) / f"{safe_id}.json"
 
-        Returns:
-            List[Dict[str, Any]]: Danh sách các sự kiện thuần JS/JSON.
-                                  Trả về mảng rỗng `[]` nếu file chưa tồn tại hoặc bị lỗi.
+    # ---------- save / load one record ----------
 
-        // Task:
-        - Kiểm tra file tồn tại.
-        - Đọc file bằng json.load() với encoding='utf-8'.
-        - Xử lý các lỗi ngoại lệ (FileNotFoundError, json.JSONDecodeError).
-        """
-        pass
+    def save(self, collection: str, record_id: str, record: BaseModel) -> None:
+        path = self._record_path(collection, record_id)
+        payload = record.model_dump(mode="json")
+        path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2, default=str),
+            encoding="utf-8",
+        )
 
-    def save_prediction_history(self, prediction_data: Dict[str, Any], filename: str = "prediction_history.json") -> bool:
-        """
-        Lưu/Ghi nối (append) kết quả dự đoán (prediction) vào file JSON.
+    def load(
+        self, collection: str, record_id: str, model: Type[T]
+    ) -> Optional[T]:
+        path = self._record_path(collection, record_id)
+        if not path.exists():
+            return None
+        return self.parse_json_to_schema(path.read_text(encoding="utf-8"), model)
 
-        Args:
-            prediction_data (Dict[str, Any]): Dữ liệu dự đoán thuần JS/JSON.
-            filename (str): Tên file lưu trữ dự đoán.
+    def require(self, collection: str, record_id: str, model: Type[T]) -> T:
+        record = self.load(collection, record_id, model)
+        if record is None:
+            raise RecordNotFoundError(f"{collection}/{record_id} not found")
+        return record
 
-        Returns:
-            bool: True nếu ghi file thành công, False nếu thất bại.
+    def delete(self, collection: str, record_id: str) -> bool:
+        path = self._record_path(collection, record_id)
+        if path.exists():
+            path.unlink()
+            return True
+        return False
 
-        // Task:
-        - Đọc danh sách dự đoán hiện có từ file (nếu chưa có file thì tạo mảng rỗng `[]`).
-        - Nối `prediction_data` vào danh sách.
-        - Ghi đè lại toàn bộ mảng vào file với `indent=4` và `ensure_ascii=False`.
-        """
-        pass
+    # ---------- bulk ----------
 
-    def load_prediction_history(self, filename: str = "prediction_history.json") -> List[Dict[str, Any]]:
-        """
-        Đọc toàn bộ lịch sử dự đoán từ file JSON để phục vụ việc đánh giá/chấm điểm.
+    def load_all(self, collection: str, model: Type[T]) -> List[T]:
+        records: List[T] = []
+        for file in sorted(self._collection_dir(collection).glob("*.json")):
+            try:
+                records.append(
+                    self.parse_json_to_schema(
+                        file.read_text(encoding="utf-8"), model
+                    )
+                )
+            except SchemaParseError:
+                # File hỏng hoặc lệch schema -> bỏ qua, không sập cả hệ thống
+                continue
+        return records
 
-        Args:
-            filename (str): Tên file dự đoán cần đọc.
+    def query(self, collection: str, model: Type[T], **filters: Any) -> List[T]:
+        """Ví dụ: archive.query('predictions', Prediction, thesis_id='t1', status=PredictionStatus.ACTIVE)"""
+        def matches(record: T) -> bool:
+            return all(getattr(record, key, None) == value for key, value in filters.items())
 
-        Returns:
-            List[Dict[str, Any]]: Danh sách các dự đoán thuần JS/JSON.
-                                  Trả về mảng rỗng `[]` nếu file chưa tồn tại hoặc bị lỗi.
+        return [r for r in self.load_all(collection, model) if matches(r)]
 
-        // Task:
-        - Tương tự như load_event_history, đọc và parse JSON an toàn.
-        """
-        pass
+    # ---------- append-only log (dùng cho Event / event_log) ----------
+
+    def append_jsonl(self, stream_name: str, record: BaseModel) -> None:
+        path = self.base_dir / f"{stream_name}.jsonl"
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(record.model_dump(mode="json"), default=str, ensure_ascii=False) + "\n")
+
+    def load_jsonl(self, stream_name: str, model: Type[T]) -> List[T]:
+        path = self.base_dir / f"{stream_name}.jsonl"
+        if not path.exists():
+            return []
+        records: List[T] = []
+        with path.open(encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    records.append(self.parse_json_to_schema(line, model))
+        return records
