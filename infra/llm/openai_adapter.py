@@ -25,6 +25,10 @@ class OpenAIAdapter(LLMClient):
         self._client = instructor.from_openai(OpenAI(api_key=resolved_key))
         self._model = model
 
+    @property
+    def model_name(self) -> str:
+        return self._model
+
     def generate_response(self, *, system_prompt: str, response_model: type[T]) -> T:
         return self._client.chat.completions.create(
             model=self._model,

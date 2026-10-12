@@ -1,0 +1,47 @@
+ticker,company,domain,currency
+NVDA,NVIDIA,ai_infra,USD
+AMD,Advanced Micro Devices,ai_infra,USD
+AVGO,Broadcom,ai_infra,USD
+TSM,Taiwan Semiconductor Manufacturing,ai_infra,USD
+MU,Micron Technology,ai_infra,USD
+ANET,Arista Networks,ai_infra,USD
+VRT,Vertiv,ai_infra,USD
+EQIX,Equinix,ai_infra,USD
+DLR,Digital Realty,ai_infra,USD
+ORCL,Oracle,ai_infra,USD
+MSFT,Microsoft,ai_infra;llm,USD
+AMZN,Amazon,ai_infra;llm,USD
+GOOGL,Alphabet,ai_infra;llm,USD
+META,Meta Platforms,llm,USD
+IBM,IBM,llm,USD
+BABA,Alibaba,llm,USD
+BIDU,Baidu,llm,USD
+TCEHY,Tencent,llm,USD
+AAPL,Apple,llm,USD
+CRM,Salesforce,llm,USD
+CEG,Constellation Energy,energy,USD
+VST,Vistra,energy,USD
+NEE,NextEra Energy,energy,USD
+GEV,GE Vernova,energy;ai_infra,USD
+ETN,Eaton,energy;ai_infra,USD
+DUK,Duke Energy,energy,USD
+SO,Southern Company,energy,USD
+D,Dominion Energy,energy,USD
+AEP,American Electric Power,energy,USD
+XEL,Xcel Energy,energy,USD
+EXC,Exelon,energy,USD
+CNP,CenterPoint Energy,energy,USD
+XOM,Exxon Mobil,energy,USD
+CVX,Chevron,energy,USD
+COP,ConocoPhillips,energy,USD
+SLB,SLB,energy,USD
+TER,Teradyne,robotics;ai_infra,USD
+ROK,Rockwell Automation,robotics,USD
+ABB,ABB,robotics;energy,USD
+SYM,Symbotic,robotics,USD
+CGNX,Cognex,robotics,USD
+ZBRA,Zebra Technologies,robotics,USD
+ISRG,Intuitive Surgical,robotics,USD
+HON,Honeywell,robotics;energy,USD
+EMR,Emerson Electric,robotics;energy,USD
+TSLA,Tesla,robotics,USD

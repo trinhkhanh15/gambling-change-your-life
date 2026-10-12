@@ -1,0 +1,4 @@
+ticker,start_date,end_date,error
+ABB,2025-01-01,2025-03-31,YFTzMissingError: $ABB: possibly delisted; no timezone found
+ABB,2025-07-01,2025-12-31,YFTzMissingError: $ABB: possibly delisted; no timezone found
+ABB,2026-01-01,2026-06-30,YFTzMissingError: $ABB: possibly delisted; no timezone found

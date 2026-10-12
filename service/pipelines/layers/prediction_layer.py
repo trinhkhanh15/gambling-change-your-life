@@ -13,7 +13,13 @@ class PredictionLayer:
         self._llm = llm
         self._repository = repository
 
-    def generate(self, thesis: Thesis) -> Prediction:
+    def generate(
+        self,
+        thesis: Thesis,
+        *,
+        market_context: dict | None = None,
+        information_cutoff: datetime | None = None,
+    ) -> Prediction:
         if thesis.status != ThesisStatus.ACTIVE:
             raise ValueError("predictions can only be generated for active theses")
         history = [p for p in self._repository.list(Prediction) if p.thesis_id == thesis.id]
@@ -27,6 +33,9 @@ class PredictionLayer:
         draft = PredictionDraft.model_validate(
             self._llm.generate_response(system_prompt=prompt, response_model=PredictionDraft)
         )
+        draft_fields = draft.model_dump()
+        if market_context:
+            draft_fields.update(market_context)
         version = max((p.version for p in history), default=0) + 1
         if active:
             old = active[0].model_copy(update={"status": PredictionStatus.SUPERSEDED})
@@ -36,8 +45,8 @@ class PredictionLayer:
             id=f"prediction-{uuid4().hex[:12]}",
             thesis_id=thesis.id,
             version=version,
-            **draft.model_dump(),
-            information_cutoff=datetime.now(timezone.utc),
+            **draft_fields,
+            information_cutoff=information_cutoff or datetime.now(timezone.utc),
         )
         return self._repository.save(prediction)
 

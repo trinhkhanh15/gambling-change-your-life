@@ -1,0 +1,563 @@
+published_at,title,content,source
+"Sun, 02 Feb 2025 08:00:00 GMT",Frontiers | Deep reinforcement learning for time-critical wilderness search and rescue using drones,"Abstract
+Traditional search and rescue methods in wilderness areas can be time-consuming and have limited coverage. Drones offer a faster and more flexible solution, but optimizing their search paths is crucial for effective operations. This paper proposes a novel algorithm using deep reinforcement learning to create efficient search paths for drones in wilderness environments. Our approach leverages a priori data about the search area and the missing person in the form of a probability distribution map. This allows the policy to learn optimal flight paths that maximize the probability of finding the missing person quickly. Experimental results show that our method achieves a significant improvement in search times compared to traditional coverage planning and search planning algorithms by over
+1 Introduction
+Wilderness Search and Rescue (WiSAR) operations in Scotland’s vast and often treacherous wilderness pose significant challenges for emergency responders. To combat this, Police Scotland Air Support Unit (PSASU) and Scottish Mountain Rescue (SMR) regularly use helicopters to assist in search operations (Carrell, 2022). However, the deployment of helicopters can be slow, especially in the Scottish Isles where the PSASU’s Eurocopter EC135 based in Glasgow can take multiple hours to arrive. Additionally, operating helicopters is extremely costly.
+Drones, also known as unmanned aerial vehicles, offer a cost-effective and agile solution for aerial search. Both PSASU and SMR are placing small fleets of drones around Scotland for rapid deployment in a WiSAR scenario. These fleets will never replace the requirement for a helicopter due to the inherent lifting disparities between the two platforms but will ensure that the search can begin as soon as possible.
+The current approach to flying drones for PSASU is the pilot-observer model where two personnel are required at a minimum per drone. In this setup, the observer is in charge of maintaining visual line of sight at all times whilst the pilot can fly the drone and inspect the live camera feed. Koester et al. (2004) identifies that a foot-based searcher has a higher detection rate when not in motion, similar to the behaviour exhibited by pilots (Ewers et al., 2023b). The cognitive load of being in-motion whilst searching is evidently a barrier for pilots and offloading one aspect of this may lead to efficiency gains.
+To address this challenge and to also free up precious manpower, search planning algorithms are employed to optimize drone flight paths (Lin and Goodrich, 2009). While Deep Reinforcement Learning (DRL) has not been explored in this context, its success in other domains, such as video games and drone racing (Mnih et al., 2015; Kaufmann et al., 2023), suggests its potential for improving WiSAR search planning. The ability of DRL to generalize the problem and make decisions that maximise future gains based on extensive training allows it to provide unique solutions to the problem.
+WiSAR search planning is an information rich task and the effective utilization of prior information - such as the place last seen, age, and fitness levels of the missing person - is critical. This information can be used to generate a Probability Distribution Map (PDM), which describes the probability of detecting the missing person at a given location and informs the search stage of the mission. Without this a priori information the search problem converts into either a coverage or exploration problem. The former assumes a uniform PDM whilst the later develops an understanding of the environment in real-time. There are a multitude of algorithms that can generate the PDM (Ewers et al., 2023a; Hashimoto et al., 2022; Šerić et al., 2021) and as such it can be assumed to be a known quantity during search planning.
+The core contributions of this research to the field are thus as follows:
+- • We propose a novel application of DRL to the search planning problem which can outperform benchmark algorithms from the literature (Lin and Goodrich, 2009; Subramanian et al., 2020). This apporach leverages a priori information about the search space without limiting its field of view and thus reducing performance.
+- • We propose the use of a continuous PDM, as opposed to an image-based one (Lin and Goodrich, 2009; Subramanian et al., 2020), to prevent undesired noisy rewards (Guo and Wang, 2023; Fox et al., 2017). This further empowers the policy to use a continuous action space which greatly increases the degrees of freedom over the benchmark algorithms from the literature.
+- • A framework for calculating the accumulated probability over the search path through cubature (Ewers et al., 2024) is introduced. A different formulation for this calculation from the literature is required due to the use of the continuous PDM and action space.
+Related work is discussed in Section 2, and the methodology is presented in Section 3. Results are shown in Section 4, and a conclusion is drawn in Section 5.
+2 Related work
+Coverage planning algorithms have been around for decades (Galceran and Carreras, 2013) in various forms with the most well-known, and intuitive, being the parallel swaths (also known as lawnmower or zig-zag) pattern. This guarantees complete coverage of an entire area given enough time. However, for WiSAR applications, reducing the time to find is substantially more important whilst also dealing with endurance constrained systems like drones.
+Lin and Goodrich (2009) approach the search planning problem by using a gradient descent algorithm in the form of Local Hill Climbing (LHC) that can advance into any of the surrounding eight cells. However, LHC alone is not sufficient because Waharte and Trigoni (2010) found that this class of algorithm does not perform well due to their propensity in getting stuck around local maxima. For this reason Lin and Goodrich (2009) introduces the notion of global warming to break out of local maxima. This raises the zero probability floor sequentially a number of times, storing the paths and then reassessing them given the original PDM. Through this, and a convolution-based tie-breaking scheme, LHC_GW_CONV (local hill climb, global warming, convolution) is shown to have very favourable results. However, only the adjacent areas are considered at every time step.
+In order to consider the area as a whole, sampling-based optimisation approaches have been applied to the problem. Morin et al. (2023) uses ant colony optimisation with a discrete PDM and Ewers et al. (2023b) uses both genetic algorithm and particle swarm optimisation with a pseudo-continuous PDM. However, due to the nature of sampling-based optimisation problems, they are prone to long computation times to converge on a solution.
+A core problem with the previously mentioned algorithms is the inability to consider the PDM as a whole when making decisions. Being able to prioritise long-term goals over short-term gains is a key feature of DRL.
+DRL is being used extensively for mission planning such as by Yuksek et al. (2021) who used proximal policy optimisation to create a trajectory for two drones to avoid no-fly-zones whilst tracking towards the mission objective. This approach has defined start and target locations, however the uses of no-fly-zones with constant radius is analogous to an inverted PDM. Peake et al. (2020) uses Recurrent-DDQN for target search in conjunction with A2C for region exploration with a single drone to find missing people. This method does not use any a priori information but rather explores the area in real time. This shows that DRL is a suitable approach to the search-over-PDM problem that a WiSAR mission requires.
+As highlighted in Section 1, search and exploration planning are very different problems. Exploration planning has seen many different planning algorithms such as in work by Zhang et al. (2024) which uses a partially observable markov decision process and environment discretisation handle exploration and search in near real time. Similarly, Talha et al. (2022) and Peake et al. (2020) use DRL with environment discretisation to explore the environment whilst searching. Ebrahimi et al. (2021) also uses DRL but localizes missing people using radio signal strength indexes without prior knowledge of the searchable domain. These algorithms do not have any a priori knowledge available during the planning stage other than what is discovered in real-time; a different problem.
+A core aspect of DRL is having a fully observable environment such that the policy can infer why the action resulted in the reward. Thus, being able to represent the PDM effectively is a primary goal. Whilst images can be used as inputs for DRL, as done by Mnih et al. (2015) to play Atari 2600 computer games, the typically large dimension can be prohibitive. However, since PDM generation algorithms most commonly create discrete maps (Šerić et al., 2021; Hashimoto et al., 2022), finding a different representation is required. To go from a discrete to continuous PDM, Lin and Goodrich (2014) uses a gaussian mixture model to represent the PDM as a sum of bivariate Gaussians. This can be easily used to numerically represent the numerous bivariate Gaussian parameters in an array which is a suitable format for a DRL observation.
+There are many DRL algorithms to chose from with Proximal Policy Optimisation (PPO) (Schulman et al., 2017) and Soft Actor-Critic (SAC) (Haarnoja et al., 2018) being some of the most prevalent in the literature (Yuksek et al., 2021; Mock and Muknahallipatna, 2023; Xu et al., 2019). Mock and Muknahallipatna (2023) found that PPO performed well for low dimension observation spaces, whilst SAC performed much better for larger ones. The need for a large observation space comes from the fact that the policy would need to have a sense of memory regarding where it had been to encounter unseen probability to satisfy the markov decision process that underpins DRL. Mock and Muknahallipatna (2023) found that a recurrent architecture was comparable to including previous states in the observation (also known as frame stacking). This shows that frame-stacking with SAC is a suitable DRL architecture for the current problem.
+3 Methods
+All parameters used in this study can be found in Tables 1, 2.
+TABLE 1
+| Parameter | Value | Units | 
+|---|---|---|
+|  | 4 |  | 
+|  | 0 |  | 
+|  | 150 |  | 
+|  | 2.5 |  | 
+|  | 0.1 |  | 
+|  | 1.0 |  | 
+|  | 0.5 |  | 
+|  | 0.5 |  | 
+Simulation parameters used for this study.
+TABLE 2
+| Hyperparameter | Value | 
+|---|---|
+| Learning rate |  | 
+| Optimizer | AdamKingma and Ba (2017) | 
+| Batch size | 1024 | 
+| Learning starts | 8192 | 
+| Buffer size |  | 
+| Training frequency | 10 | 
+| Gradient steps | 50 | 
+3.1 Modelling
+3.1.1 Environment
+The low level tasks of control (Tedrake, 2023; Fresk and Nikolakopoulos, 2013; Wang et al., 2023), trajectory generation (Yu et al., 2023), and obstacle avoidance (Richter et al., 2016; Levine et al., 2010; Swinton et al., 2024) can be assumed to be of a high enough standard as to achieve perfect waypoint mission execution performance. The drone within the environment is therefore modelled as a simple heading control model with a constant step size
+From
+Equation 1
+it is clear that the state
+is dependent on the states from
+to
+making this model suitable for formulating the drone’s motion as a markov decision process (MDP). We define the tuple
+where.
+- •
+- •
+- •
+- •
+We further define the reward function in Section 3.1.3 and outline the training of the optimal policy Section 3.2.
+3.1.2 Probability distribution map
+In a real WiSAR scenario, algorithms such as Ewers et al. (2023a), Hashimoto et al. (2022), and Šerić et al. (2021) can be employed to generate the PDM given the search mission profile - last place seen, terrain, profile of the lost person, and more. This data is not publicly available in any meaningful quantity and is thus not usable in this scenario. Therefore, as is common within the literature, the PDM is randomly generated for training and evaluation.
+The PDM is modelled as a sum of Yao et al., 2019) such that a point on the ground at coordinate Figure 1, the area enclosed by the rectangular bounds contain less than this. Section 3.1.3 further discusses how this is handled such that the available probability is normalized.
+FIGURE 1
+3.1.3 Reward
+As the agent moves a constant distance seen area for a given path at time-step seen and denoted by Equation 2. Thusly,
+The integral is calculated using a cubature integration scheme (Ewers et al., 2024) with constrained Delaunay triangulation (Chew, 1987) to subdivide Figure 2B.
+FIGURE 2
+Other than allowing easy calculation of the accumulated probability, the buffering of the path prevents revisiting of an area contributing the same probability multiple times. This can be seen at the cross-over point Figure 2A.
+In order to correlate action to reward, only the additional probability that has been accumulatedFigure 3.
+FIGURE 3
+As highlighted in Section 3.1.2, the enclosed probability by the bounds is not equal to 1. To handle this, Equations 3, 4, gives the reward
+The enclosed probability can then be used to calculate the probability efficiency at time-step
+Finally, reward shaping is used to discourage future out-of-bounds actions and to penalize visiting areas of low probability or revisiting previously seen sections. The latter is easily handled by the buffering of the path as seen in Figure 2A, where the areas highlighted in red will contribute no value to the reward resulting in a penalty of
+3.2 Training algorithm
+SAC is a DLR algorithm particularly effective for continuous control tasks and it addresses the exploration-exploitation dilemma by simultaneously maximizing expected reward and entropy. The interaction of the policy with the environment can be seen in Figure 4. Entropy, a measure of uncertainty, encourages the agent to explore the environment, preventing it from getting stuck in suboptimal solutions.
+FIGURE 4
+SAC employs an actor-critic architecture consisting of the following key components:
+- • Policy Network (Actor): Denoted as
+- • Q-function Networks (Critics): SAC uses two soft Q-networks,
+- • Value Network: While not explicitly maintained, the soft state-value function
+The use of two soft Q-networks helps to reduce positive bias in the policy improvement step, a common issue in value-based methods. The soft Q-networks can be trained to minimize the soft Bellman residual:
+SAC incorporates an automatic entropy tuning mechanism (Haarnoja et al., 2019) to adjust the temperature parameter
+By automatically tuning
+3.2.1 Policy network
+The core of the policy network Table 3 resulting in Figure 5. The inner workings of the policy are defined in Algorithm 1.
+TABLE 3
+| Sub-state | Symbol | Definition | 
+|---|---|---|
+| Path |  |  | 
+| PDM |  |  | 
+| Position |  |  | 
+| Out-of-bounds |  |  | 
+| Number of steps |  |  | 
+Definition of the five state observations.
+FIGURE 5
+Algorithm 1
+4 Results
+4.1 Experimental setup
+In order to effectively benchmark the proposed algorithms, two additional baselines are implemented; lawnmower (Galceran and Carreras, 2013) and LHC_GW_CONV (Lin and Goodrich, 2009). These were chosen due to the former being ubiquitous for coverage planning, and the latter being a optimisation-based implementation that struggles to fully explore the PDM. To ensure compatibility in the comparison to the proposed algorithm, the parallel lines for lawnmower are offset by the step size
+The results for the algorithm implemented in this research, titled SAC-FS-CNN from here on in, is the cumulation of three separate training runs with random starting seeds. This aligns with the best practices outlined by Agarwal et al. (2022) to ensure robust analysis for DRL results. Each model was trained for a minimum of 21 days (Ubuntu 22.04 machine with a AMD Ryzen 9 5950X CPU, a NVIDIA RTX A6000 GPU, and 64GB of RAM.
+One evaluation of an algorithm involves generating the random PDM, then creating the resultant search path. This is labelled one run. Each algorithm was evaluated at least
+4.2 Probability over distance (POD)
+Maximising the probability efficiency (Equation 5) at all times is critical. This directly correlates to increasing the chances of finding a missing person in a shorter time. It is important for the POD of SAC-FS-CNN to out-perform the benchmark algorithms at all times. If this is not the case, the search algorithm selection becomes dependent on the endurance and mission. However, if the POD is better at all times then one algorithm will be superior no matter the application. To calculate the POD, the probability efficiency is evaluated at
+From Figure 6A it is clear that SAC-FS-CNN sufficiently outperforms the benchmark algorithms at all distances. This is further highlighted by the Table 4. This is corroborated by the median Figure 6C. Notably, however, LHC_GW_CONV has a substantial amount of high
+FIGURE 6
+TABLE 4
+| Method |  |  |  | 
+|---|---|---|---|
+| LHC_GW_CONV |  |  |  | 
+| Lawnmower |  |  |  | 
+| SAC-FS-CNN |  |  |  | 
+Mean POD with the standard deviation as error.
+Likewise, the performance profile from Figure 6B follows the trend. It can be seen that SAC-FS-CNN has close to Figure 6C and Table 4.
+It is of note that LHC_GW_CONV has the largest range of values going from 0.0 to 0.5 whilst SAC-FS-CNN only goes from 0.02 to 0.41. This shows that LHC_GW_CONV can perform very well given the right PDM or poorly given the wrong one. The DLR approach of SAC-FS-CNN, on the other hand, does not suffer from this due to its ability to find a general solution to the problem.
+4.3 Distance to find (DTF) and percentage found (PF)
+Whilst POD shows the theoretical effectiveness of an algorithm, the intended use-case is finding a missing person whilst searching within a bounded area. The mission statement is reducing the time it takes to find the potentially vulnerable person to save lives.
+To quantify this requirement, we introduce DTF and PF. The former gives a clear answer on the capabilities on the various algorithms, whilst the latter should align with the POD results from Table 4 for validation.
+Firstly, Gumbel-Softmax (Li et al., 2021) is used to sample Equation 6 with
+From Figure 7, it is clear to see that SAC-FS-CNN outperforms the benchmark algorithms with a lower median DTF as well as a lower inter-quartile range. Table 5 shows that the mean DTF is Section 4.2. Likewise, the PF values closely match to the Table 4 showing that this test correlates to the theory.
+FIGURE 7
+TABLE 5
+| Method | PF | Mean DTF |  | 
+|---|---|---|---|
+| LHC_GW_CONV |  |  |  | 
+| Lawnmower |  |  |  | 
+| SAC-FS-CNN |  |  |  | 
+DTF with the standard deviation as error.
+Whilst SAC-FS-CNN outperforms the benchmarks in the median DTF, it is of note that the variances of the three algorithms are almost identical as shown by the whiskers in Figure 7. This is due to the manner in which the positions are sampled from the random PDM making it likely for there to be a very small subset of positions near the start and end of the path. It is evident that this is the cause because the variances of the three algorithms range from approximately 0 to 512 which is the full simulation distance.
+4.4 Area efficiency
+A path with corners has overlapping regions when considering the buffered path which is evident from Figure 2A. The most efficient path in this formulation is thus a straight line such that the area efficiency is Equation 4, this value is calculated with
+The aggregated metrics can be seen in Figure 8 which shows a significant difference in area efficiency between the three methods. The lawnmower method consistently achieves the highest area efficiency values, with a median value of 0.97. This suggests that lawnmower generates paths with minimal overlapping regions within the buffer, resulting in efficient utilization of the search buffer. However, lawnmower has no variance in area efficiency as it is a coverage planning algorithm and as such always generates the same path. In contrast, the SAC-FS-CNN method demonstrates lower area efficiency, with a median value around 0.90. This indicates that SAC-FS-CNN paths tend to have more overlapping areas within the buffer, leading to suboptimal utilization. LHC_GW_CONV method exhibits the lowest area efficiency, with a median value of 0.86 due its inability to make trade-offs now for future gains due to its local hill climbing formulation. This, however, is not the case for LHC_GW_CONV as an infinite-horizon discounted reward is at the core of the SAC algorithm meaning that the current action is taken in order to maximise the future rewards.
+FIGURE 8
+5 Conclusion
+Our research proposed SAC-FS-CNN for search planning in WiSAR operations, leveraging a priori information. This was identified as a solution to the challenge of maximizing accumulated probability over a given area due to the powerful capabilities of machine learning to identify patterns and make generalizations in complex tasks.
+The results indicate that SAC-FS-CNN can outperform benchmark algorithms in the probability efficiency by up to
+While SAC-FS-CNN exhibits lower area efficiency compared to lawnmower, this trade-off is justified by its superior performance in terms of POD and DTF. Future work could focus on improving area efficiency while maintaining its strong performance in these critical metrics.
+The integration of DRL into WiSAR mission planning holds great potential for the future of search, offering a powerful tool with potential to significantly increase the success rate of WiSAR efforts.
+Statements
+Data availability statement
+The raw data supporting the conclusions of this article will be made available by the authors, without undue reservation.
+Author contributions
+J-HE: Conceptualization, Data curation, Formal Analysis, Funding acquisition, Investigation, Methodology, Project administration, Resources, Software, Validation, Visualization, Writing–original draft, Writing–review and editing. DA: Conceptualization, Funding acquisition, Supervision, Writing–review and editing. DT: Supervision, Writing–review and editing.
+Funding
+The author(s) declare that financial support was received for the research, authorship, and/or publication of this article. This work was supported by the Engineering and Physical Sciences Research Council, Grant/Award Number: EP/T517896/1-312561-05.
+Conflict of interest
+The authors declare that the research was conducted in the absence of any commercial or financial relationships that could be construed as a potential conflict of interest.
+Generative AI statement
+The author(s) declare that no Generative AI was used in the creation of this manuscript.
+Publisher’s note
+All claims expressed in this article are solely those of the authors and do not necessarily represent those of their affiliated organizations, or those of the publisher, the editors and the reviewers. Any product that may be evaluated in this article, or claim that may be made by its manufacturer, is not guaranteed or endorsed by the publisher.
+Supplementary material
+The Supplementary Material for this article can be found online at: https://www.frontiersin.org/articles/10.3389/frobt.2024.1527095/full#supplementary-material
+References
+- 1
+- 2
+- 3
+- 4 EbrahimiD.SharafeddineS.HoP.-H.AssiC. (2021). Autonomous uav trajectory for localizing ground objects: a reinforcement learning approach. IEEE Trans. Mob. Comput.20, 1312–1324. 10.1109/TMC.2020.2966989
+- 5 EwersJ.-H.AndersonD.ThomsonD. (2023a). “GIS data driven probability map generation for search and rescue using agents,” in IFAC world congress 2023, 1466–1471. 10.1016/j.ifacol.2023.10.1834
+- 6
+- 7 EwersJ.-H.SarahS.AndersonD.EuanM.ThomsonD. (2024). Enhancing reinforcement learning in sensor fusion: a comparative analysis of cubature and sampling-based integration methods for rover search planningarXiv, 7825–7830. 10.1109/iros58592.2024.10801978
+- 8
+- 9
+- 10
+- 11
+- 12
+- 13
+- 14 HashimotoA.HeintzmanL.KoesterR.AbaidN. (2022). An agent-based model reveals lost person behavior based on data from wilderness search and rescue. Sci. Rep.12, 5873. 10.1038/s41598-022-09502-4
+- 15 KaufmannE.BauersfeldL.LoquercioA.MüllerM.KoltunV.ScaramuzzaD. (2023). Champion-level drone racing using deep reinforcement learning. Nature620, 982–987. 10.1038/s41586-023-06419-4
+- 16
+- 17 KoesterR.CooperD. C.FrostJ. R.RobeR. Q. (2004). Sweep width estimation for ground search and rescue. Available at: https://www.semanticscholar.org/paper/Sweep-Width-Estimation-for-Ground-Search-and-Rescue-Koester-Cooper/10b35a96e9f34ae0f69a326bd33c6ba0db9fa172.
+- 18 LevineD.LudersB.HowJ. (2010). “Information-rich path planning with general constraints using rapidly-exploring random trees,” in AIAA Infotech@Aerospace 2010 (Atlanta, Georgia: American Institute of Aeronautics and Astronautics).
+- 19
+- 20
+- 21
+- 22
+- 23 MockJ. W.MuknahallipatnaS. S. (2023). A comparison of PPO, TD3 and SAC reinforcement algorithms for quadruped walking gait generation. J. Intelligent Learn. Syst. Appl.15, 36–56. 10.4236/jilsa.2023.151003
+- 24
+- 25 PeakeA.McCalmonJ.ZhangY.RaifordB.AlqahtaniS. (2020). Wilderness search and rescue missions using deep reinforcement learning. 2020 IEEE Int. Symposium Saf. Secur. Rescue Robotics (SSRR), 102–107. 10.1109/SSRR50563.2020.9292613
+- 26
+- 27 RichterC.BryA.RoyN. (2016). “Polynomial trajectory planning for aggressive quadrotor flight in dense indoor environments,” in Robotics research. Editors InabaM.CorkeP. (Cham: Springer International Publishing), 114, 649–666. 10.1007/978-3-319-28872-7_37
+- 28
+- 29 ŠerićL.PinjušićT.TopićK.BlaževićT. (2021). Lost person search area prediction based on regression and transfer learning models. ISPRS Int. J. Geo-Information10, 80. 10.3390/ijgi10020080
+- 30 SubramanianA.AlimoR.BewleyT.GillP. (2020). “A probabilistic path planning framework for optimizing feasible trajectories of autonomous search vehicles leveraging the projected-search reduced hessian method,” in AIAA scitech 2020 forum (Orlando, FL: American Institute of Aeronautics and Astronautics).
+- 31
+- 32 TalhaM.HusseinA.HossnyM. (2022). “Autonomous UAV navigation in wilderness search-and-rescue operations using deep reinforcement learning,” in AI 2022: advances in artificial intelligence. Editors AzizH.CorrêaD.FrenchT. (Cham: Springer International Publishing), 733–746.
+- 33
+- 34 WaharteS.TrigoniN. (2010). “Supporting search and rescue operations with UAVs,” in 2010 International Conference on Emerging Security Technologies (University of Oxford), 142–147. 10.1109/EST.2010.31
+- 35
+- 36 XuJ.DuT.FosheyM.LiB.ZhuB.SchulzA.et al (2019). Learning to fly: computational controller design for hybrid UAVs with reinforcement learning. ACM Trans. Graph.38, 1–12. 10.1145/3306346.3322940
+- 37
+- 38
+- 39 YuksekB.Umut DemirezenM.InalhanG.TsourdosA. (2021). Cooperative planning for an unmanned combat aerial vehicle fleet using reinforcement learning. J. Aerosp. Inf. Syst.18, 739–750. 10.2514/1.I010961
+- 40 ZhangY.LuoB.MukhopadhyayA.StojcsicsD.EleniusD.RoyA.et al (2024). Shrinking pomcp: a framework for real-time UAV search and rescue. 2024 Int. Conf. Assur. Aut. (ICAA), 48–57. 10.1109/ICAA64256.2024.00016
+Summary
+Keywords
+reinforcement learning, search planning, mission planning, autonomous systems, wilderness search and rescue, unmanned aerial vehicle, machine learning
+Citation
+Ewers J-H, Anderson D and Thomson D (2025) Deep reinforcement learning for time-critical wilderness search and rescue using drones. Front. Robot. AI 11:1527095. doi: 10.3389/frobt.2024.1527095
+Received
+12 November 2024
+Accepted
+30 December 2024
+Published
+03 February 2025
+Volume
+11 - 2024
+Reviewed by
+Wenxin Wang, National University of Singapore, Singapore
+Huan Yu, Zhejiang University, China
+Pengqin Wang, Hong Kong University of Science and Technology, Hong Kong SAR, China in collaboration with reviewer HY
+Updates
+Copyright
+© 2025 Ewers, Anderson and Thomson.
+This is an open-access article distributed under the terms of the Creative Commons Attribution License (CC BY). The use, distribution or reproduction in other forums is permitted, provided the original author(s) and the copyright owner(s) are credited and that the original publication in this journal is cited, in accordance with accepted academic practice. No use, distribution or reproduction is permitted which does not comply with these terms.
+*Correspondence: Jan-Hendrik Ewers, j.ewers.1@research.gla.ac.uk
+Disclaimer
+All claims expressed in this article are solely those of the authors and do not necessarily represent those of their affiliated organizations, or those of the publisher, the editors and the reviewers. Any product that may be evaluated in this article or claim that may be made by its manufacturer is not guaranteed or endorsed by the publisher.",Frontiers
+"Fri, 07 Feb 2025 21:00:14 GMT",Top Robotics Companies Transforming the Industry in 2026 | VanEck,"Top Robotics Companies Transforming the Industry in 2026
+July 01, 2026
+Read Time 7 MIN
+The robotics industry is experiencing a transformation driven by advancements in artificial intelligence, automation, and machine learning. As we move through 2026, several companies are leading the charge by reshaping industries and enhancing efficiency through cutting-edge robotic solutions, and the investment landscape is advancing to reflect it.
+10 Robotics Companies Driving Innovation in 2026
+Robotics technology is no longer a futuristic concept; it is here and rapidly evolving. The following ten companies are at the forefront of this revolution, leading in manufacturing, automation, and machine learning applications. Where noted, IBOT weighting figures indicate each company’s percentage weight in the VanEck Robotics ETF (IBOT) as of June 24, 2026.
+- Fanuc Corporation (3.08%)
+- Focus: Robots and Manufacturing/Industrial Automation Systems
+- Known For: Fanuc has captured a significant share of the global industrial robotics market, with strong contributions in manufacturing and electronics.
+- Why It Matters: With a strong foothold in the manufacturing sector, Fanuc’s robots are critical in enhancing precision and efficiency, particularly in electronics production.
+- ABB Ltd. (5.14%)
+- Focus: Robots and Manufacturing/Industrial Automation Systems
+- Known For: ABB has installed over 500,000 industrial robots worldwide, solidifying its position as a leader in automation solutions.1
+- Why It Matters: Though ABB divested its robotics division to SoftBank2, ABB Ltd. continues to play a major role in the broader automation landscape — streamlining industries through advanced manufacturing and industrial automation systems across sectors worldwide.
+- Yaskawa Electric Corporation (1.89%)
+- Focus: Robots and Manufacturing/Industrial Automation Systems
+- Known For: Yaskawa has installed over 600,000 robots globally, demonstrating its dominance in industrial automation.3
+- Why It Matters: The company’s automation systems contribute significantly to efficiency in production lines worldwide.
+- KUKA AG
+- Focus: Robots and Manufacturing/Industrial Automation Systems
+- Known For: KUKA is a pioneer in developing robotics for manufacturing, particularly in automotive assembly and material handling. More than 500,000 KUKA robots are in use worldwide.4
+- Why It Matters: Automotive giants rely on KUKA’s innovations to automate assembly lines, reduce costs, and improve product consistency.
+- Emerson Electric Co (5.02%)
+- Focus: Robots and Manufacturing/Industrial Automation Systems
+- Known For: Emerson is a global industrial technology leader delivering automation software and hardware for various industries.
+- Why It Matters: Emerson’s automation platforms are pivotal to smart factory deployments globally, and its reach across infrastructure sectors makes it among the most deployed industrial automation companies in the world.
+- Rockwell Automation Inc (3.76%)
+- Focus: Robots and Manufacturing/Industrial Automation Systems
+- Known For: Rockwell Automation is widely considered the world’s largest pure-play industrial automation and information company, offering PLCs (Programmable Logic Controller), motion control, and smart manufacturing solutions to manufacturers.
+- Why It Matters: Rockwell’s control systems and automation platforms are essential to the surge of domestic factories being built across various sectors.
+- Boston Dynamics
+- Focus: Robots and Manufacturing/Industrial Automation Systems
+- Known For: Boston Dynamics’ Spot robots are deployed across factory floors, construction sites, and research labs globally, with over 1,500 in customer hands.5
+- Why It Matters: The company’s advanced robotics technology is expanding the capabilities of robots in industries such as security, logistics, and disaster response.
+- Intuitive Surgical (0.85%)
+- Focus: Robotic Surgical Systems
+- Known For: Intuitive Surgical’s da Vinci robotic systems have been used by surgeons to operate on over 20 million patients globally.6
+- Why It Matters: Intuitive Surgical is at the forefront of medical robotics, revolutionizing healthcare by enhancing precision and reducing recovery times for patients.
+- Cognex (1.01%)
+- Focus: Machine Vision
+- Known For: Cognex is the world’s leading provider of machine vision systems used in manufacturing automation.
+- Why It Matters: Cognex’s vision systems, the eyes of modern factory robots, are essential infrastructure for automated production lines, enabling defect detection, part identification, and quality inspection at scale.
+- Keyence Corp (5.11%)
+- Focus: Machine Vision
+- Known For: Keyence is a global leader in machine vision technology, supporting automation with innovative sensors and imaging solutions.
+- Why It Matters: Keyence’s innovations are enabling next-generation robotic applications, enhancing quality control and precision manufacturing.
+Honorable Mention:
+- Tesla and the Rise of Humanoid Robotics
+- Focus: AI-Driven Automation/Humanoid Robots
+- Known For: Tesla leverages existing AI and computer vision expertise from its vehicle program for its Optimus humanoid robot, designed to perform repetitive or dangerous tasks.
+- Why It Matters: Like how Tesla disrupted the auto industry, their entry into humanoid robotics signals the same. If Optimus achieves commercial scale, it could redefine labor automation.
+Recommended subscription
+What Investors Should Know About the Robotics Industry in 2026
+Robotics is a transformative force across industries, driving innovation and efficiency in ways previously unimaginable. As an investor, understanding the key sectors impacted and the broader economic trends shaping robotics adoption can provide a comprehensive view of the opportunities within this rapidly evolving market.
+Which Industries Are Being Transformed by Robotics Companies?
+Manufacturing
+- Robotics is revolutionizing the manufacturing sector, particularly in assembly lines, logistics, and precision welding. Automated solutions are now the backbone of smart factories, helping to reduce labor costs, minimize errors, and improve productivity.
+Healthcare
+- Robotic-assisted surgeries and automation in diagnostics are reshaping patient care. Technologies like robotic surgical systems and AI-driven diagnostic tools are increasing precision, improving outcomes, and enhancing accessibility in healthcare. For instance, robotic arms are being widely adopted for minimally invasive surgeries, reducing recovery times for patients.
+Logistics and E-Commerce
+- Warehouse automation and delivery robots are streamlining operations, enhancing order fulfillment, and reducing costs. Companies like Amazon and Walmart are pioneering the use of robotics in automated warehouses, ensuring faster delivery and more efficient inventory management.
+Agriculture
+- Precision farming technologies are optimizing crop yields and addressing labor shortages in the agricultural sector. Robotic systems for planting, harvesting, and monitoring are helping to improve productivity and sustainability in food production.
+What Economic Trends Are Driving Robotics Adoption?
+Labor Shortages
+- Demographic shifts, such as aging populations and changing workforce preferences, are creating labor gaps in many countries. Nations like Japan and Germany are investing heavily in robotic automation to address these shortages, with robots increasingly performing tasks in elderly care, factory assembly, and beyond.
+AI Integration
+- Artificial intelligence is revolutionizing robotics by making machines smarter, more adaptive, and capable of handling complex tasks. AI-driven robots are being deployed across industries to improve predictive maintenance, optimize workflows, and expand the scope of automation. For example, AI-enhanced logistics robots can use real-time data to adjust operations dynamically, reduce downtime, and boost efficiency.
+Government Support
+- Governments around the world are incentivizing the adoption of robotics through subsidies, policies, and funding initiatives. Programs like Germany’s Industry 4.0 and China’s Made in China 2025 are promoting the digitalization of manufacturing and advancing robotics innovation. These initiatives aim to boost economic competitiveness, reduce reliance on imports, and foster leadership in high-tech industries.
+What Are the Key Risks of Investing in Robotics Companies?
+- High R&D Costs: Robotics development requires significant investment in research and development, impacting profitability.
+- Regulatory Challenges: Robotics used in healthcare and autonomous systems face stringent regulatory approvals.
+- Technological Obsolescence and Competition: Rapid innovation cycles mean companies must continuously evolve to remain competitive.
+By staying informed about these industry applications and economic drivers, businesses and investors can strategically position themselves to capitalize on the growth and innovation in the robotics sector. Understanding these dynamics is essential for navigating the opportunities and challenges in this transformative market.
+How Can Investors Gain Exposure to Top Robotics Companies?
+The VanEck Robotics ETF (IBOT) invests in companies that are involved in robotics, targeting companies that derive at least 50% of their revenues from one or more of seven subthemes. These themes include robots and manufacturing/industrial automation systems, robotic surgical systems, 3D printing, robotics or manufacturing computer-aided design or other software, semiconductor manufacturing systems, machine vision, and embedded machine learning chips. Coverage includes global companies in developed markets, providing exposure to the world’s largest markets, including China, the world’s leader in industrial robotics demand.
+Conclusion
+The robotics industry is undergoing a transformative era, with advancements in AI, automation, and machine learning driving its rapid evolution. From manufacturing and healthcare to logistics, e-commerce, and agriculture, robotics is revolutionizing industries while addressing challenges like labor shortages and operational inefficiencies. Leading companies such as Fanuc, ABB, and Intuitive Surgical are at the forefront, spearheading innovation across seven key subthemes like industrial automation, machine vision, and robotic surgical systems. Understanding these subthemes and the economic trends driving robotics adoption is essential for investors to capitalize on this transformative market while navigating its associated risks.
+Disclosures
+Holdings will vary for the VanEck Robotics ETF and its corresponding Index. For a complete list of holdings in the ETF, please click here: VanEck Robotics ETF - Holdings.
+This is not an offer to buy or sell, or a recommendation to buy or sell any of the securities, financial instruments or digital assets mentioned herein. The information presented does not involve the rendering of personalized investment, financial, legal, tax advice, or any call to action. Certain statements contained herein may constitute projections, forecasts and other forward-looking statements, which do not reflect actual results, are for illustrative purposes only, are valid as of the date of this communication, and are subject to change without notice. Actual future performance of any assets or industries mentioned are unknown. Information provided by third party sources are believed to be reliable and have not been independently verified for accuracy or completeness and cannot be guaranteed. VanEck does not guarantee the accuracy of third party data. The information herein represents the opinion of the author(s), but not necessarily those of VanEck or its other employees.
+Prior to using any AI tools, please consult your compliance and legal departments to assess and mitigate potential risks associated with its application in your specific regulatory environment.
+Please note that any content generated by an Artificial Intelligence (AI) system has not been subject to a human review, and thus no assurance can be made as to its accuracy. Please exercise caution when using AI systems and verify the content produced through such systems wherever possible.
+BlueStar® Robotics Index (BRBTNTR): seeks to track the overall performance of companies involved in robotics.
+An investment in the Fund may be subject to risks which include, among others, risks related to investing in robotics companies, information technology sector, industrials sector, equity securities, medium-capitalization companies, special risk considerations of investing in Japanese and European issuers, foreign securities, semiconductor industry, depositary receipts, market, operational, index tracking, authorized participant concentration, no guarantee of active trading market, trading issues, passive management, fund shares trading, premium/discount and liquidity of fund shares, non-diversified and index-related concentration risks, all of which may adversely affect the Fund. Medium-capitalization companies may be subject to elevated risks.
+Investing involves substantial risk and high volatility, including possible loss of principal. An investor should consider the investment objective, risks, charges and expenses of a Fund carefully before investing. To obtain a prospectus and summary prospectus, which contain this and other information, call 800.826.2333 or visit vaneck.com. Please read the prospectus and summary prospectus carefully before investing.
+© Van Eck Securities Corporation, Distributor, a wholly owned subsidiary of Van Eck Associates Corporation.
+Related Funds
+Disclosures
+Holdings will vary for the VanEck Robotics ETF and its corresponding Index. For a complete list of holdings in the ETF, please click here: VanEck Robotics ETF - Holdings.
+This is not an offer to buy or sell, or a recommendation to buy or sell any of the securities, financial instruments or digital assets mentioned herein. The information presented does not involve the rendering of personalized investment, financial, legal, tax advice, or any call to action. Certain statements contained herein may constitute projections, forecasts and other forward-looking statements, which do not reflect actual results, are for illustrative purposes only, are valid as of the date of this communication, and are subject to change without notice. Actual future performance of any assets or industries mentioned are unknown. Information provided by third party sources are believed to be reliable and have not been independently verified for accuracy or completeness and cannot be guaranteed. VanEck does not guarantee the accuracy of third party data. The information herein represents the opinion of the author(s), but not necessarily those of VanEck or its other employees.
+Prior to using any AI tools, please consult your compliance and legal departments to assess and mitigate potential risks associated with its application in your specific regulatory environment.
+Please note that any content generated by an Artificial Intelligence (AI) system has not been subject to a human review, and thus no assurance can be made as to its accuracy. Please exercise caution when using AI systems and verify the content produced through such systems wherever possible.
+BlueStar® Robotics Index (BRBTNTR): seeks to track the overall performance of companies involved in robotics.
+An investment in the Fund may be subject to risks which include, among others, risks related to investing in robotics companies, information technology sector, industrials sector, equity securities, medium-capitalization companies, special risk considerations of investing in Japanese and European issuers, foreign securities, semiconductor industry, depositary receipts, market, operational, index tracking, authorized participant concentration, no guarantee of active trading market, trading issues, passive management, fund shares trading, premium/discount and liquidity of fund shares, non-diversified and index-related concentration risks, all of which may adversely affect the Fund. Medium-capitalization companies may be subject to elevated risks.
+Investing involves substantial risk and high volatility, including possible loss of principal. An investor should consider the investment objective, risks, charges and expenses of a Fund carefully before investing. To obtain a prospectus and summary prospectus, which contain this and other information, call 800.826.2333 or visit vaneck.com. Please read the prospectus and summary prospectus carefully before investing.
+© Van Eck Securities Corporation, Distributor, a wholly owned subsidiary of Van Eck Associates Corporation.",Top Robotics Companies Transforming the Industry in 2026 | VanEck
+"Sat, 08 Feb 2025 08:00:00 GMT",2 Under-the-Radar Robotics Stocks Analysts Are Betting On,"Even a brief look at the stock markets today is enough to show that technology is in the driver's seat. Of the ten largest publicly traded companies on Wall Street, the mega-cap firms that dominate the headlines and the trading, the top eight are all technology companies – and all of them are valued at over $1 trillion.
+Maximize Your Portfolio with Data Driven Insights:
+- Leverage the power of TipRanks' Smart Score, a data-driven tool to help you uncover top performing stocks and make informed investment decisions.
+- Monitor your stock picks and compare them to top Wall Street Analysts' recommendations with Your Smart Portfolio
+But the tech giants are not the only plays in town. A savvy investor can find plenty of opportunities among the smaller companies on Wall Street, it just takes a look beyond the obvious. Plenty of micro-cap and small-cap tech companies live there, and each brings its own suite of attributes and advantages to vie for attention.
+Robotics is a field that investors should expect to show gains going forward – in a way, it's just the physical embodiment of the artificial intelligence that has been generating so much hype in recent years. And the companies that specialize in applied robotics, putting mobile AI to work for all of us, will find themselves in a strong position to realize those gains.
+Against this backdrop, we've used the TipRanks database to pinpoint two of these under-the-radar stocks, each a robotics company that features recent positive endorsements from the analysts. Let's dive in.
+Knightscope (KSCP)
+The first stock we'll look at is Knightscope, a company that has created a line of autonomous security robots. The company's product lines feature autonomous patrolling robots, capable of providing mobile audio and video surveillance for public spaces and commercial properties around the clock; stationary remote-controlled monitoring devices, capable of providing 360-degree observation around a fixed point; automated audio gunshot detection devices, capable of pinpointing gunshots in time and place, and then alerting the police; and a range of emergency contact devices – callboxes and e-phones designed to put the public in contact with first responders when cell phones are not available.
+Taken together, Knightscope's robots put modern technology – networking, remote access and control, audio/visual surveillance, and autonomous movement – at the service of first responders, property owners, and the public. The company's robots are designed to provide effective monitoring of sensitive areas, and rapid contact with appropriate authorities, when a 24-hour human presence is not practicable.",Yahoo! Finance
+"Sun, 09 Feb 2025 08:00:00 GMT",Engineering joy,"When the late professor emeritus Woodie Flowers SM ’68, MEng ’71, PhD ’73 was a student at MIT, most of his classes involved paper-and-pencil exercises with predetermined solutions. Flowers had an affinity for making things, and for making them work. When he transitioned from student to teacher, he chose to carry this approach into his method of instruction and, in doing so, he helped change the way engineering students are educated — at MIT, and around the world.
+Flowers passed away in 2019, but his legacy lives on, and the magnitude of the educational revolution he helped to evolve was profound.
+In the 1970s, Flowers took over instruction of 2.70, now called class 2.007 (Design and Manufacturing I). The capstone course is one that many first-year students today look forward to taking, but that wasn’t always the case. Before Flowers took over instruction, class instruction relied heavily on chalkboard demonstrations.
+“Their idea of design at the time was to draw drawings of parts,” explains Professor Emeritus David Gossard PhD ’75, Flowers’ longtime friend and colleague. “Woody had a different idea. Give the entire class a kit of materials [and] a common goal, which was to build a machine — to climb a hill, or pick up golf balls, or whatever it did — and make a contest out of it. It was a phenomenal success. The kids loved it, the faculty loved it, the Institute loved it. And over a period of years, it became, I think it's fair to say, an institution.”
+With Flowers at the lead, 2.70 transformed into a project-based, get-your-hands-dirty, robotics-competition-focused experience. By all accounts, he also made the experience incredibly fun — something he valued in his own life. He was fond of skydiving and was often seen rollerblading through the Infinite Corridor. The course, informed by his unique style, was at the forefront of a revolution in engineering education, and it quickly helped solidify the Department of Mechanical Engineering’s reputation for innovative education.
+“A lot of kids had never started from scratch and built anything,” Flowers once told The Boston Globe. His advisor, Robert Mann, had similar beliefs in a hands-on, modern pedagogy. Building on Mann’s philosophy, and incorporating his own approach, Flowers breathed new life and provided a new foundation for “the MIT way” of teaching. This was a reinvigoration at the right place and the right time that ultimately had a global butterfly effect on the popularity of science, technology, engineering, and math (STEM) instruction.
+“Over the years lectures had displaced the hands-on stuff, and Woodie brought it back,” says Sanjay Sarma, the Fred Fort Flowers (1941) and Daniel Fort Flowers (1941) Professor in Mechanical Engineering. “I can’t think of a single person to have impacted the field of robotics and design in undergraduate, or high school, education as much as Woodie.”
+Flowers became interested in mechanical engineering and design at a young age, thanks in large part to his parents. His father was a welder with a penchant for tinkering, inventing, and building, his mother was an elementary school teacher. Flowers grew up taking things apart and putting them back together — an activity which he seemed to believe made students better engineers.
+Speaking in 2010 with InfiniteMIT, a digital archive of Institute history made possible by the generosity of Jane and A. Neil Pappalardo ’64, Flowers shared a story about a student who had accepted the task in her group of finding out whether a piece of reinforcement steel rebar could be bent into a tight loop and serve as a bearing.
+“She came into lab and I was there early, and she had a slightly bent piece of rebar. It had been heated — you could tell that it had been hot, and she was going to report that she really can’t do that, it just kind of doesn’t work,” Flowers recalled. He suggested they try another approach.
+“We went out in the lab and I found another big steel bar and I found the biggest vice I could find,” he continued. Flowers cranked the rebar down against the piece of steel he was going to wrap it around, then took a four-pound sledgehammer to it. “My father had a blacksmith pit, so that was familiar to me. I wrapped [the rebar around the steel and] made a fine bearing. As I finish the last blow, I looked up and three of the best students in the class — really sharp people — were standing there with their jaw open. They’d never seen anyone hit a piece of steel hard enough to just mold it.”
+He continued, “that visceral understanding of the behavior of mechanics is really important. It doesn’t fall out of the sky and it certainly doesn’t come out of a textbook, it comes through real interaction. I believe I had been so lucky because when I encountered Castiglione’s theorem about deflection of materials, it kind of made sense.”
+Course 2.70/2.007 is considered a landmark class in engineering education. It was one of the first hands-on classes to teach students not only how to design an object, but also how to build it and, by demonstrating the value of practical, project-based learning and robotics competitions, it has influenced the approach taken by many other programs. Today, it continues to develop students’ competence and self-confidence as design engineers, with an emphasis on the creative design process bolstered by application of physical laws, robustness, and manufacturability.
+Notably, the course also served as the inspiration for development of the FIRST Robotics program, which Flowers and inventor Dean Kamen started in 1989. FIRST has programs for preschool through high school students and, to date, more than 3.2 million youth from more than 100 countries have participated in FIRST competitions.
+In the 1970s, the parts kit — or as Flowers fondly referred to it, the “bag of junk” — included things like springs, tongue depressors, and rubber bands. Flowers’ wife Margaret recalls spending many nights packing these kits and hosting advisees in their home. “We considered ourselves a team,” she says.
+Today, in addition to using the kit of mechanical parts and materials, students in 2.007 might develop 3D printed components, and they incorporate electronics in their robots for an autonomous portion of the final competition.
+The spring 2024 competition, themed after Cartoon Network’s popular animated science fiction sitcom “Rick and Morty,” featured a spaceship that students’ robots could interact with for points, vats of “acid” where balls could be collected and placed in tubes, and game pieces that paid homage to iconic episodes. The final task required the robot to travel up an elevator and send a character down a zipline.
+In recent years, other themes have centered on tasks related to stories ranging from “Star Wars” to “Back to the Future” and “Wakanda Forever.” The 2022 theme, however, may have been the most poignant theme to date: “Legacy,” a celebration of Flowers’ life and work.
+“[Woodie] revealed, unambiguously, that designing, fabricating, assembling and building things was fun,” says Gossard. “It was arguably the essence of engineering. There was joy in it.”
+A version of this article appears in the Spring 2025 issue of MechE Connects, the magazine of the MIT Department of Mechanical Engineering.",MIT News | Massachusetts Institute of Technology
+"Tue, 11 Feb 2025 08:00:00 GMT","Robotics Research: How Asia, Europe and America Invest","KUKA education centre (copyright KUKA group) - higher quality on request
+""The 4th edition of the World Robotics R&D Programs covers the latest funding developments, including updates in 2024,"" says Prof. Dr. Jong-Oh Park, Vice Chairman of the IFR Research Committee and member of the Executive Board. “A total of 13 countries are in the list, with Singapore and Canada being presented for the first time in this publication.”
+In China, the ""14th Five-Year Plan"" for the development of the robotics industry runs until 2025. The program, published by the Ministry of Industry and Information Technology (MIIT) in Beijing in December 2021 focuses on promoting innovation. The aim is to make China a world leader in robotics technology and industrial development. The “Key Special Program on Intelligent Robots” has been updated in July 2024. The budget of about USD 45.2 million (about CNY 329 million) promotes the development of independent key sectors of the national economy. Key targets include Fundamental Frontier Technologies e.g. training of generative AI models.
+The recent statistical yearbook ""World Robotics"" by IFR shows that China reached a robot density of 470 units per 10,000 workers in the manufacturing industry: The country ranks third worldwide in 2023. China only entered the top 10 in 2019. It has managed to double its robot density within four years.
+In Japan, the “New Robot Strategy” aims to make the country the world´s number one robot innovation hub. Key sectors remain unchanged including manufacturing, nursing and medical, and agriculture. The “Moonshot Research and Development Program”, launched 2020, will run until 2050 with a budget of USD 440 million (JPY 25 billion). Ten Moonshot goals have been set in the areas of society, environment and economy to achieve 'human well-being'. These include issues facing society in the future, such as an ageing population and global warming. The program promotes the realization of AI robots that learn autonomously, adapt to their environment, evolve in intelligence and act alongside humans.
+According to the statistical yearbook ""World Robotics"" by IFR, Japan is the world´s number one industrial robot manufacturer. The country globally ranked in fifth place with 419 units per 10,000 workers installed.
+In Korea, the government announced the ""4th Basic Plan on Intelligent Robots"" in January 2024 which will run until 2028. An investment of USD 128 million (KRW 180 billion) supports the development of the robotics industry as a core industry for the Fourth Industrial Revolution, as well as innovation in manufacturing and services. Key targets are to improve technology, manpower and corporate competitiveness which constitute the foundation of the Korean robotics industry. The country aims to strengthen strategic inter-company, international, and interregional cooperation for the robotics industry.
+The statistical yearbook ""World Robotics"" by IFR lists Korea as the world´s number one adopter of industrial robots with 1,012 robots per 10,000 employees. Robot density has increased by 5% on average each year since 2018.
+Horizon Europe is the European Union’s key research and innovation framework program. The budget is set of USD 100 billion (EUR 95.5 billion) and runs until 2027. Top targets are: strengthening the EU’s scientific and technological bases, boosting Europe’s innovation capacity and competitiveness. The European Commission provides total funding of USD 183.5 million (EUR 174 million) for the robotics-related work program 2023-2025 that was partly updated in April 2024. The focus is on industrial leadership in AI, data and robotics, clean energy transition and innovative health initiatives, to name but a few.
+According to IFR's “World Robotics” statistics, the European Union has a robot density of 219 units per 10,000 workers, with Germany, Sweden, Denmark and Slovenia in the world's top ten.
+Germany´s R&D and innovation program “High-Tech Strategy 2025 (HTS)” runs until 2026 with a total budget set to USD 369.2 million (EUR 350 million). The “Robotics research action plan” shall support the cross-connection of research centers as “Robotics Institute Germany”, support skilled labor and bring robotics research results into application.
+According to the report ""World Robotics"" by IFR, Germany is the largest robot market in Europe – the robot density ranks fourth worldwide with 429 robots per 10,000 employees.
+Robotics R&D programs managed by the United States include basic research on Intelligent Robotics and Autonomous Systems by the National Science Foundation (NSF), ""Space Robotics"" by the NASA and ""Military Robotics and Autonomous Vehicles"" by the Department of Defense (DoD). Following the Mars exploration program, NASA has launched the Artemis project to send astronauts to the surface of the moon and to develop promising capabilities for Mars missions after 2024. The total budget for Artemis is USD 53 billion for fiscal years 2021-2025. The NSF’s research programs support the development and use of robotics in workplaces, hospitals, communities, and homes. The budget requested for 2024 is around USD 70 million. The DoD‘s 2023 budget includes USD 10.3 billion for autonomy and robotics technologies.
+The statistical yearbook ""World Robotics"" by IFR shows that robot density in the United States hit 295 units in 2024. The country ranks tenth in the world. Regarding annual installations of industrial robots, the USA takes third position.
+International Federation of Robotics
+PRESS OFFICER
+Carsten Heer
+phone +49 (0) 40 822 44 284
+E-Mail: [email protected]
+Please find the information paper “World Robotics R&D Programs” by IFR for download at: https://ifr.org/r-and-d (download requires registration)
+All press requests are handled by our press officer.
+Carsten Heer
+IFR Press Inquiries
+Phone: +49 40-822 44 284
+E-Mail: press(at)ifr.org
+Dr. Susanne Bieller
+IFR General Secretary
+E-Mail: secretariat(at)ifr.org",IFR International Federation of Robotics
+"Thu, 13 Feb 2025 08:00:00 GMT","‘LIMITLESS POTENTIAL’: Fort Moore, Columbus State partnership to fuel Army robotics innovation","'LIMITLESS POTENTIAL': Fort Moore, Columbus State partnership to fuel Army robotics innovation
+February 13, 2025
+Columbus State University is now part of a collaborative technology hub at the Maneuver Center of Excellence and Fort Moore, where its Robotics Engineering Program serves a key role in uniting soldiers, academics and industry to drive U.S. Army innovation and modernization.
+The post’s new Maneuver Innovation Lab—the first of its kind on a U.S. Army Training & Doctrine Command (TRADOC) installation—opened with a ribbon-cutting ceremony on Feb. 7. It is a partnership between Fort Moore’s Maneuver Battle Lab, the U.S. Army Combat Capabilities Development Command (DEVCOM), the Civil-Military Innovation Institute and Columbus State.
+“At the core of the Maneuver Innovation Lab lies the concept of bottom-up innovation, where soldiers are empowered to transform their ideas into prototypes and collaborate with our academic partners to drive technical solutions,” said Maj. Gen. Colin Tuley, Fort Moore’s commanding general, at the lab’s opening event. “This lab fosters a culture of excellence, innovation and experimentation that will shape the future capabilities of our force.”
+The lab’s opening featured remarks from senior military, academic and industry leaders, alongside live demonstrations of cutting-edge drone, robotics and experimentation projects. These projects— spearheaded by the Army’s Catalyst Pathfinder Program, Columbus State robotics engineering students and Fort Moore’s Experimentation Force—showcased the lab’s unique capabilities and potential to revolutionize the Army’s Infantry and Armor technology.
+“Columbus State is looking at this as an opportunity to engage with advanced technologies, including computer science, cybersecurity, robotics engineering and artificial intelligence. It’s the advanced technology that will dominate our lives as we move forward,” Columbus State President Stuart Rayfield said.
+“There is so much opportunity in this facility and the knowledge, skills and abilities coming here together,” she added. “The way that I look at this partnership is it has limitless potential.”
+BRIDGING ACADEMIC AND MILITARY INNOVATION
+The MIL’s partnership with Columbus State exemplifies the lab’s role as a bridge between academia and the Army. CSU’s Robotic Engineering Program brings cutting-edge research to the lab setting with its motion-tracking system to experiment with autonomous ground and aerial robotics. The MIL provides CSU students the space and resources to design, build and experiment with robotic systems, offering them invaluable hands-on experience in a professional setting.
+“This partnership with Fort Moore enhances our Robotics Engineering program and provides Columbus State students real-world experience in an Army setting,” Rayfield (pictured speaking at the ribbon-cutting) said. “It also strengthens our commitment to serving the military community and the state’s high-tech workforce needs while contributing to national defense and solidifying our reputation as a top military-friendly university.”
+The MIL expands students’ hands-on experience in coding, manufacturing and 3-D printing as they work alongside soldiers on drones, robots and artificial intelligence, which, as Tuley said, will ultimately “…protect our soldiers and allow our soldiers to protect our nation.”
+Rayfield said that experiential learning will be key in setting Columbus State students apart from their peers as they enter the workforce after college.
+“The benefit of having a physical presence here is to allow students to engage in problem-solving and development. They’re right here on site, and they’re getting to have that experiential learning in a way we can’t provide on our campus,” she explained. “They will have experiences here [at Fort Moore] directly connected to what they want to do professionally after graduation.”
+Columbus State's Spot® robotic dog (Boston Dynamics) and one of its drones being demonstrated in the Maneuver Innovation Lab.
+Also situated in the MIL’s physical footprint is the Design, Innovation, Research and Technology (DIRT) Lab, which uses advanced manufacturing tools to prototype solutions for unit-defined problems rapidly. Complementing this, the Maneuver Battle Lab’s Uncrewed Systems Experimentation Facility provides a controlled environment for testing small, unmanned aerial and ground systems. These integrated resources and rapid experimentation processes support the Army’s experimental force (EXFOR) in developing innovative warfighting concepts and preparing for future challenges.
+The Maneuver Innovation Lab partnership has been in the works since 2024 and is part of a university-military partnership that has grown since the inception of the Robotics Engineering Program.
+ABOUT THE ROBOTICS ENGINEERING PROGRAM
+Since their inception, Columbus State’s undergraduate and graduate Robotics Engineering programs have grown exponentially: the bachelor’s program tenfold since its launch in 2019, and the master’s program threefold since 2021. Reyhanoglu expects the program’s undergraduate enrollment to climb to 100 students and graduate enrollment to 30 master’s degree students within the next five years.
+Based in the College of Letters & Sciences’Department of Earth & Space Sciences, Columbus State’s program hosts Georgia’s only bachelor’s and master’s degree programs in robotics engineering. At Columbus State, students prepare for careers in robotics, automation, hardware development, software development and machine learning. In addition to traditional bachelor’s and master of science degrees in robotics engineering, its accelerated Robotics Engineering program allows exceptional students to complete both a bachelor’s and master’s degrees in five years.
+The university’s suite of robotics engineering offerings also includes an associate of science degree in engineering studies and a seven-course, 21-credit-hour robotics certificate program open to all Columbus State students and others seeking to expand their knowledge in the field.
+For more information about the robotics programs at CSU, visit the Robotics Engineering website.
+Main photo: Maj. Gen. Colin Tuley (commanding general, U.S. Army Maneuver Center of Excellence, Dr. Patrick Baker (director, DEVCOM Army Research Laboratory), Dr. Stuart Rayfield (president, Columbus State University) and Craig Kuphall (deputy Pathfinder Program manager) cut the ribbon at the opening of the Maneuver Innovation Lab at the Maneuver Battle Lab on Fort Moore, Georgia. (U.S. Army photo by Joey Rhodes II)
+Media contacts:
+Fort Moore: Maddy Gonzalez, Public Affairs Specialist, Maneuver Center of Excellence, Fort Moore,
+                        706.545.4591, madelyn.r.gonzalez.civ@army.mil
+Columbus State University: Michael Tullier, APR, Executive Director of Strategic Communication + Marketing, 706.507.8729,
+                        mtullier@columbusstate.edu",news.columbusstate.edu
+"Fri, 14 Feb 2025 08:00:00 GMT",Mytra unlocks a new paradigm in smart factories,"Science fiction writers and visionaries have taught us to expect intelligent automation for quite some time, but the reality is that hardware is hard, as the oft-repeated saying goes. It’s only recently that startups and enterprises alike have made the pivot from unimaginative assembly-line machines to robots and smart equipment that can truly revolutionize the way physical work gets done. One of the examples of this future in practice is Mytra, a San Francisco–based startup founded in 2022. Mytra founder Chris Walti says, “Much of the world’s GDP is still driven by physical industries, with little to no impact from software. Robots are how we will apply software to the physical world.”1
+Mytra’s goal is to drastically simplify the task of moving material around the four walls of a factory or warehouse. According to Walti, 80% of the work in a warehouse involves simply moving matter from one point to another. Despite the availability of automated solutions, most warehouses globally still rely on manual processes. Walti, who spent several years automating production lines for electric cars, believes the potential for disruption is vast: “This is one of the biggest gaps in product-market fit that I can think of.”
+Traditional automation solutions are often inflexible and expensive. By the time a supply chain enterprise, for instance, completes a 10-year investment in automation systems, it might have shifted to entirely different products that the new equipment cannot handle. Mytra's aim is to tackle this problem in a way that suits the dynamic, scalable needs of modern industries with a system that Walti describes as a “general-purpose computer for moving matter around in 3D space.""
+""It's a set of tools that companies can configure to do whatever they need for material flow today or into the future, without having to reinvest,"" Walti elaborates. Mytra's storage system consists of three main components: steel “cubes” that can be built into any shape or size, a cell tray that holds materials in place, and a robot that manipulates materials within the cube. In this highly modular system, a company can store warehouse materials in a grid-like structure that matches its building space. Employees can then utilize software to call for materials (maneuvered by the robot) when they need to be delivered, which reduces the need for humans to move around the warehouse as well as reduces the risk of worker injury.
+Crucially, the modular system can move and manipulate a wide range of materials, from pencils to refrigerators. This unlocks automation for unclear future applications, not just what an enterprise is currently selling or keeping in stock. Walti emphasizes that for any industrial application, companies think, “I want to automate, I want to make things more efficient, and I want to make more efficient use of my labor. But what if I can't predict the future?”
+Walti and his team have successfully deployed their system at a major grocery chain within two years, which was notably fast for the industry. He’s keen to rethink how industrial automation can be done, as opposed to just automating existing processes. Walti says, “Innovation is often tied to dramatic simplifications, as we saw with the smartphone, which condensed thousands of components into a handful. That’s how you break trade-offs.”
+Looking forward, Walti believes that Mytra is only scratching the surface. “For relatively constrained problems, such as moving material in a grid or driving a vehicle in straight lines, the software and hardware have caught up to our ideas,” he says. Companies can thus unlock value by applying robotics in a clever way to these constrained problems. But the furthest star of progress in this field is general-purpose humanoid robotics, capable of handling tasks as diverse and open-ended as manufacturing, surgery, or sanitation work.
+Walti, who previously led the humanoid robotics team for a major automotive manufacturer, says, “I view humanoid robotics as the ninth inning. Before we get there, there’s a series of other capabilities that investors and entrepreneurs are interested in building, if they can find a blueprint to success. Right now is a really interesting time to be in this space.”",Deloitte Insights
+"Sat, 15 Feb 2025 08:00:00 GMT",AI: Meta expands Humanoid AI robots race. RTZ #633,"From the earliest days of this newsletter, I’ve been discussing the nascent, but ramping opportunity of applying LLM AI technologies to robotics. Reviving the long existing investment efforts globally around robots and robotics, both for industrial and consumer robotic applications in the home and physical world. The last two years in particular, have seen a resurgent interest, and reinvention of robotics with AI technologies, both in the US and aggressively in China, as I’ve discussed.
+Elon Musk has gotten the most amount of media attention in the US with his Tesla/xAI/SpaceX Optimus line of robots, with Google, OpenAI, Nvidia, Amazon, Apple, Boston Dynamics, and many other robotics startups ramping up as well. Particularly in ‘humanoid’ robots. Now Meta is joining this multi-billion, multi year effort, with a vigorous effort, which likely accelerates the space for humanoid robots in particular. Apple is apparently in the fray as well. That is the Bigger Picture I’d like to discuss this Sunday.
+Bloomberg provides the relevant context in “Meta Plans Major Investment Into AI-Powered Humanoid Robots”:
+- “Company is aiming to be the engine powering humanoid market”
+- “Ex-Cruise CEO Marc Whitten to run new group in Reality Labs”
+It’s the Reality Labs that’s been the tip of the arrow in Meta’s $50 billion+ investments in the metaverse, and recently in AI powered AR and Smart Glasses I’ve also discussed in detail. Bloomberg continues:
+“Meta Platforms Inc., after pushing into augmented reality and artificial intelligence, has identified its next big bet: AI-powered humanoid robots.
+“The company is making a significant investment into the category — futuristic robots that can act like humans and assist with physical tasks — and is forming a new team within its Reality Labs hardware division to conduct the work, according to people with knowledge of the matter.”
+“Meta plans to work on its own humanoid robot hardware, with an initial focus on household chores. Its bigger ambition is to make the underlying AI, sensors and software for robots that will be manufactured and sold by a range of companies, said the people, who asked not to be identified because the initiative hasn’t been announced.”
+The plans seem to emcompass both robotics hardware and software, potentially with and for other AI robotics companies:
+“Meta has started discussing its plan with robotics companies, including Unitree Robotics and Figure AI Inc. At least initially, it doesn’t plan to build a Meta-branded robot — something that could directly rival Tesla Inc.’s Optimus — but it may consider doing so in the future, the people added.”
+“The humanoid effort mirrors exploratory projects at other technology giants, including Apple Inc. and Alphabet Inc.’s Google Deepmind division. A Meta spokesperson declined to comment.”
+Not to mention Nvidia, which has a wide and deep program for AI robotics.
+And for Meta, it starts with a senior hire to head the effort:
+“Meta confirmed the creation of the new team to employees Friday, telling them it will be led by Marc Whitten, who resigned as chief executive officer of General Motors Co.’s Cruise self-driving car division earlier this month. He was previously an executive at gaming company Unity Software Inc. and Amazon.com Inc.”
+“The core technologies we’ve already invested in and built across Reality Labs and AI are complementary to developing the advancements needed for robotics,” Andrew Bosworth, Meta’s chief technology officer, wrote in a memo reviewed by Bloomberg News. He mentioned the company’s advancements in hand tracking, computing at low bandwidth and always-on sensors.”
+Meta’s goal seems to extend its AI software advantages into this emerging market for AI in the physical world:
+“Meta executives believe that while humanoid robotics companies have made headway in hardware, Meta’s advances in artificial intelligence and data collected from augmented and virtual reality devices could accelerate progress in the nascent industry. Current humanoids are still not useful enough to fold clothes, carry a glass of water, place dishes in a rack for cleaning or conduct other home chores that could get consumers interested in the category.”
+Meta of course is planning on leveraging its hardware/software successes at retail with its Ray-Ban branded Meta smart glasses, which have over two million units sold, with ambitions to expand much larger.
+“We believe that expanding our portfolio to invest in this field will only accrue value to Meta AI and our mixed and augmented reality programs,” Bosworth wrote. Whitten, who will report to Bosworth, will have headcount to hire around 100 engineers this year, one of the people said.”
+And of course, like other major tech companies like OpenAI, Apple, Google and others, the aspiration is to provide the software ‘operating system’ for general purpose and specialized human robotic platforms:
+“Meta’s goal is to provide what Google’s Android operating system and Qualcomm Inc.’s chips did for the phone industry by building a foundation for the rest of the market.”
+“The software, sensors and computing packages that Meta is already developing for its devices are the same technologies that are needed to power humanoids, according to one of the people involved in the project.”
+And the budget is large and expanding:
+“Meta has been investing billions of dollars for years into its Reality Labs hardware division, which sells products like the Quest VR headset and the increasingly popular Ray-Ban smart glasses. Meta plans to spend $65 billion this year on related products, including artificial intelligence infrastructure and the new robot work.”
+The current company with the most media attention in humanoid robotics in the US is of course Elon Musk’s Tesla/xAI set of companies with Optimus:
+“Tesla Inc. CEO Elon Musk has said that his company’s Optimus robot will eventually be sold to consumers and could cost around $30,000. Tesla is beginning limited production this year. Other businesses also have made headway. Boston Dynamics, for instance, has already brought products to market for automation in warehouses. Some companies are focused on selling to businesses and manufacturers, while Meta’s intention is to sell into homes.”
+AI robot startups like Unitree are offering early humanoid robots at $16000+ price points, with growing capabilities. As with self driving cars, prices can go beyond $90,000 depending on options.
+All this work at a high level, is of course tied at the hip to the hard work underway in AI powered self driving vehicles:
+“Humanoids are an evolution of the work companies have been doing in autonomous vehicles. They use similar underlying technologies and require large amounts of data and AI processing. But while the safety stakes are lower — roaming a person’s home instead of traveling 50 miles per hour on an open road — Meta executives believe humanoids are more challenging because every person’s home has a different layout, while city streets are fairly standardized.”
+Meta is planning a wider development framework for its efforts here, with ambitious hiring efforts in the space:
+“Meta will build some of its own hardware, use off-the-shelf components and work with existing manufacturers as soon as it can, said the people with knowledge of the project. They added that building prototypes and hardware is key for testing ahead of deploying a platform, even if Meta itself doesn’t ultimately release a branded product.”
+“The company is pitching its work as the platform of choice for robot development, one of the people said, adding that the goal was to make Meta’s Llama software a foundation for robotics researchers around the world.”
+“Meta will also seek to develop tools for robot safety, addressing possible dangers such as a person’s hand getting caught in an actuator or another part of a humanoid robot. There are also issues related to power safety, such as how a robot powers down or stops functioning mid-task if it runs out of power.”
+The timeline expectations being discussed may be a tad aggressive, but ambitous:
+“One person with knowledge of the project said that Meta believes humanoids are still a couple of years away from being widely available — and it could be years before the company’s platform is ready to underpin third-party products. But it will become a major focus for Meta and the broader tech industry, the person said.”
+There are other takes on Meta’s robotic ambitions, as well as their recent senior hire to expand the retail distribution for smart glasses, and presumably humanoid robots whenever they’re ready.
+But the bottom line is that Meta has put their significant AI assets in the ring for humanoid robot expansion, along the ramping investments by big tech and well funded AI startups in the industry.
+While they all face robust and accelerating competition from China, particularly given their headstart in wide and deep manufacturing ecosystems for robots, autos/EVS, drones, and other AI ‘Mobility’ driven devices. This time in the physical world.
+And that’s an updated Bigger Picture to keep in mind in this AI Tech Wave. Stay tuned.
+(NOTE: The discussions here are for information purposes only, and not meant as investment advice at any time. Thanks for joining us here)",AI: Reset to Zero
+"Mon, 17 Feb 2025 08:00:00 GMT",Updated ISO 10218: Major Advancements in Industrial Robot Safety Standards Now Available,"News
+Updated ISO 10218: Major Advancements in Industrial Robot Safety Standards Now Available
+After nearly eight years of work, the Association for Advancing Automation (A3) proudly announces the publication of the revised ISO 10218, the global flagship standard for industrial robot safety. In its first major revision since 2011, these new documents offer a significant leap forward in ensuring the safety of robotics in industrial environments.
+“Working alongside hundreds of global experts, A3 played a pivotal role in shepherding this update to publication, to refine safety requirements in response to evolving automation technologies and workplace demands,” said Jeff Burnstein, A3 president. “This effort reflects A3’s ongoing commitment to enhancing robotic safety and supporting the widespread adoption of automation.”
+The new ISO 10218 Parts 1 and 2 feature extensive updates that focus on making functional safety requirements more explicit rather than implied. This shift enhances clarity and usability, making compliance more straightforward for manufacturers and integrators alike.
+In North America, ISO 10218 had been previously adopted as ANSI R15.06 in the United States and CSA Z434 in Canada. Work is underway to adopt the new 10218 in both jurisdictions with new versions of R15.06 and Z434 expected to be released later this year.
+Key Updates in ISO 10218 (2025)
+ISO 10218 consists of two parts:
+- Part 1: Safety Requirements for Industrial Robots (Manufacturers)
+- Part 2: Safety Requirements for Industrial Robot Applications and Robot Cells (System Integrators)
+Both parts have undergone extensive revisions to address the latest safety challenges and technological advancements, including:
+- Clarified functional safety requirements that offer more precise safety guidelines to enhance compliance and risk mitigation.
+- Integrated safety requirements for collaborative robot applications that consolidates the previously separate ISO/TS 15066.
+- Incorporated safety guidance for manual load/unload procedures and end-effectors (sometimes called end-of-arm tooling or EOAT) from previously separate technical reports (TR 20218-1 and TR 20218-2).
+- New robot classifications with corresponding functional safety requirements and test methodologies.
+- Cybersecurity requirements pertaining to industrial robot safety.
+Carole Franklin, director of standards at A3 Robotics, emphasized the significance of these updates: ""With automation evolving at an unprecedented pace, it is essential that safety standards keep up with the latest advancements. This is a critical step in ensuring that as automation grows, worker safety remains a top priority. These revisions provide clearer guidelines and new classifications that will help manufacturers and system integrators implement the latest technology for safer robotic solutions.""
+Industry Impact
+""This set of safety standards has immense global acceptance, but updates were needed"" said Roberta Nelson Shea, global technical compliance officer at Universal Robots and convenor of ISO TC 299 Working Group 3. ""This is a pivotal moment for industrial robotics. With automation advancing at lightning speed, we need safety standards that keep pace.”
+“These updates bring much-needed clarity and structure, making it easier for companies to integrate robotics with confidence. Our goal has always been to ensure that innovation and safety go hand in hand. These newly revised standards deliver on that promise.""
+Availability & Purchasing Information
+The 2025 edition of ISO 10218 is now available for purchase to U.S. customers through A3. Companies and professionals looking to stay compliant with the latest safety requirements can acquire the standard through our webstore. Pricing starts at $244 USD, with options available for digital bundles.
+About Association for Advancing Automation (A3)
+The Association for Advancing Automation (A3) is the leading global advocate for the benefits of automating. A3 promotes automation technologies and ideas that transform the way business is done. Members of A3 represent over 1,300 manufacturers, component suppliers, system integrators, end users, academic institutions, research groups and consulting firms that drive automation forward worldwide.
+A3 hosts a number of industry-leading events, including Automate (May 12-15, 2025, in Detroit, MI), The Robotic Grinding & Finishing Conference (July 21-23, 2025, in Minneapolis, MN) and the International Robot Safety Conference (November 3-5, 2025, in Houston, TX).
+About ISO 10218
+ISO 10218 is the foundational safety standard for industrial robots, providing essential guidance to ensure worker safety while maximizing operational efficiency. The latest edition underscores ISO’s commitment to advancing automation safety and adapting to new technological landscapes.
+For additional information or questions about the new ISO 10218 standard, please contact your national standards body. A complete listing of these organizations is available at www.iso.org/members.html.
+Media Contacts:
+Jackie Rose
+Association for Advancing Automation                                                                                                                                                        
+Katie Schimmel
+Outlook Marketing Services
+Discover how Association for Advancing Automation can support your automation journey with their complete range of solutions and expertise.
+Visit Company Website",A3 Association for Advancing Automation
+"Thu, 20 Feb 2025 08:00:00 GMT",Helix: A Vision-Language-Action Model for Generalist Humanoid Control,"We're introducing Helix, a generalist Vision-Language-Action (VLA) model that unifies perception, language understanding, and learned control to overcome multiple longstanding challenges in robotics. Helix is a series of firsts:
+- Full-upper-body control: Helix is the first VLA to output high-rate continuous control of the entire humanoid upper body, including wrists, torso, head, and individual fingers.
+- Multi-robot collaboration: Helix is the first VLA to operate simultaneously on two robots, enabling them to solve a shared, long-horizon manipulation task with items they have never seen before.
+- Pick up anything: Figure robots equipped with Helix can now pick up virtually any small household object, including thousands of items they have never encountered before, simply by following natural language prompts.
+- One neural network: Unlike prior approaches, Helix uses a single set of neural network weights to learn all behaviors—picking and placing items, using drawers and refrigerators, and cross-robot interaction—without any task-specific fine-tuning.
+- Commercial-ready: Helix is the first VLA that runs entirely onboard embedded low-power-consumption GPUs, making it immediately ready for commercial deployment.
+New Scaling for Humanoid Robotics
+The home presents robotics' greatest challenge. Unlike controlled industrial settings, homes are filled with countless objects–delicate glassware, crumpled clothing, scattered toys–each with unpredictable shapes, sizes, colors, and textures. For robots to be useful in households, they will need to be capable of generating intelligent new behaviors on-demand, especially for objects they've never seen before.
+The current state of robotics will not scale to the home without a step change. Teaching robots even a single new behavior currently requires substantial human effort: either hours of PhD-level expert manual programming or thousands of demonstrations. Both are prohibitively expensive when we consider how vast the problem of the home truly is.
+But other domains of AI have mastered this kind of instant generalization. What if we could simply translate the rich semantic knowledge captured in Vision Language Models (VLMs) directly into robot actions? This new capability would fundamentally alter robotics' scaling trajectory (Figure 1). Suddenly, new skills that once took hundreds of demonstrations could be obtained instantly just by talking to robots in natural language. The key problem becomes: how do we extract all this common-sense knowledge from VLMs and translate it into generalizable robot control? We built Helix to bridge this gap.
+Helix is a first-of-its-kind ""System 1, System 2"" VLA model for high-rate, dexterous control of the entire humanoid upper body.
+Prior approaches face a fundamental tradeoff: VLM backbones are general, but not fast, and robot visuomotor policies are fast but not general. Helix resolves this tradeoff through two complementary systems, trained end-to-end to communicate:
+- System 2 (S2): An onboard internet-pretrained VLM operating at 7-9 Hz for scene understanding and language comprehension, enabling broad generalization across objects and contexts.
+- System 1 (S1): A fast reactive visuomotor policy that translates the latent semantic representations produced by S2 into precise continuous robot actions at 200 Hz.
+This decoupled architecture allows each system to operate at its optimal timescale. S2 can ""think slow"" about high-level goals, while S1 can ""think fast"" to execute and adjust actions in real-time. For example, during collaborative behavior (see Video 2), S1 quickly adapts to the changing motions of a partner robot while maintaining S2's semantic objectives.
+Helix's design offers several key advantages over existing approaches:
+- Speed and Generalization: Helix matches the speed of specialized single-task behavioral cloning policies while generalizing zero-shot to thousands of novel test objects.
+- Scalability: Helix directly outputs continuous control for high-dimensional action spaces, avoiding complex action tokenization schemes used in prior VLA approaches, which have shown some success in low-dimensional control setups (e.g. binarized parallel grippers) but face scaling challenges with high-dimensional humanoid control.
+- Architectural Simplicity: Helix uses standard architectures - an open source, open weight VLM for System 2 and a simple transformer-based visuomotor policy for S1.
+- Separation of concerns: Decoupling S1 and S2 allows us to iterate on each system separately, without constraints of finding unified observation space or action representations.
+Data
+We collect a high quality, multi-robot, multi-operator dataset of diverse teleoperated behaviors, ~500 hours in total. To generate natural language-conditioned training pairs, we use an auto-labeling VLM to generate hindsight instructions. The VLM processes segmented video clips from the onboard robot cameras, prompted with: ""What instruction would you have given the robot to get the action seen in this video?"" All items handled during training are excluded from evaluations to prevent contamination.
+Architecture
+Our system comprises two main components: S2, a VLM backbone, and S1, a latent-conditional visuomotor transformer. S2 is built on a 7B-parameter open-source, open-weight VLM pretrained on internet-scale data. It processes monocular robot images and robot state information (consisting of wrist pose and finger positions) after projecting them into vision-language embedding space. Combined with natural language commands specifying desired behaviors, S2 distills all semantic task-relevant information into a single continuous latent vector, passed to S1 to condition its low-level actions.
+S1, an 80M parameter cross-attention encoder-decoder transformer, handles low-level control. It relies on a fully convolutional, multi-scale vision backbone for visual processing, initialized from pretraining done entirely in simulation. While S1 receives the same image and state inputs as S2, it processes them at a higher frequency to enable more responsive closed-loop control. The latent vector from S2 is projected into S1's token space and concatenated with visual features from S1's vision backbone along the sequence dimension, providing task conditioning.
+S1 outputs full upper body humanoid control at 200hz, including desired wrist poses, finger flexion and abduction control, and torso and head orientation targets. We append to the action space a synthetic ""percentage task completion"" action, allowing Helix to predict its own termination condition, which makes it easier to sequence multiple learned behaviors.
+Training
+Helix is trained fully end-to-end, mapping from raw pixels and text commands to continuous actions with a standard regression loss. Gradients are backpropagated from S1 into S2 via the latent communication vector used to condition S1's behavior, allowing joint optimization of both components. Helix requires no task-specific adaptation; it maintains a single training stage and single set of neural network weights without separate action heads or per-task fine-tuning stages.
+During training, we add a temporal offset between S1 and S2 inputs. This offset is calibrated to match the gap between S1 and S2's deployed inference latency, ensuring that the real-time control requirements during deployment are accurately reflected in training.
+Optimized Streaming Inference
+Helix's training design enables efficient model parallel deployment on Figure robots, each equipped with dual low-power-consumption embedded GPUs. The inference pipeline splits across S2 (high-level latent planning) and S1 (low-level control) models, each running on dedicated GPUs. S2 operates as an asynchronous background process, consuming the latest observation (onboard camera and robot state) and natural language commands. It continuously updates a shared memory latent vector that encodes the high-level behavioral intent.
+S1 executes as a separate real-time process, maintaining the critical 200Hz control loop required for smooth whole upper body action. It takes both the latest observation and the most recent S2 latent vector. The inherent speed difference between S2 and S1 inference naturally results in S1 operating with higher temporal resolution on robot observations, creating a tighter feedback loop for reactive control.
+This deployment strategy deliberately mirrors the temporal offset introduced in training, minimizing the train-inference distribution gap. The asynchronous execution model allows both processes to run at their optimal frequencies, allowing us to run Helix as fast as our fastest single task imitation learning policies.
+Fine-grained VLA whole upper body control
+Helix coordinates a 35-DoF action space at 200Hz, controlling everything from individual finger movements to end-effector trajectories, head gaze, and torso posture. Head and torso control pose unique challenges—as they move, they change both what the robot can reach and what it can see, creating feedback loops that have historically caused instability. Video 3 demonstrates this coordination in action: the robot smoothly tracks its hands with its head while adjusting its torso for optimal reach, all while maintaining precise finger control for grasping. Historically, achieving this level of precision with such a high-dimensional action space has been considered extremely challenging, even for a single known task. To our knowledge, no prior VLA system has demonstrated this degree of real-time coordination while maintaining the ability to generalize across tasks and objects.
+Zero-shot multi-robot coordination
+We push Helix to the limit in a challenging multi-agent manipulation scenario: collaborative zero-shot grocery storage between two Figure robots. Video 1 showcases two fundamental advances: The robots successfully manipulate entirely novel groceries—items never encountered during training—demonstrating robust generalization across diverse shapes, sizes, and materials. Additionally, both robots operate using identical Helix model weights, eliminating the need for robot-specific training or explicit role assignments. They achieve coordination through natural language prompts like ""Hand the bag of cookies to the robot on your right"" or ""Receive the bag of cookies from the robot on your left and place it in the open drawer"" (see Video 4). This marks the first demonstration of flexible, extended collaborative manipulation between multiple robots using a VLA, particularly significant given their successful handling of completely novel objects.
+Emergent ""Pick up anything""
+We find that Figure robots equipped with Helix can pick up virtually any small household object with a simple ""Pick up the [X]"" command. In systematic testing, the robots successfully handled thousands of novel items in clutter—from glassware and toys to tools and clothing—without any prior demonstrations or custom programming.
+Particularly notable is how Helix bridges the gap between internet-scale language understanding and precise robot control. When prompted to ""Pick up the desert item"", for instance, Helix not only recognizes that a toy cactus matches this abstract concept, but also selects the closest hand and executes the precise motor commands needed to grasp it securely.
+This general-purpose ""language-to-action"" grasping capability opens new exciting new possibilities for humanoid deployment in unstructured environments.
+Helix's training is highly efficient
+Helix achieves strong object generalization with remarkably few resources. We train Helix with ~500 hours of high quality supervised data in total, a small fraction of the size of previously collected VLA datasets (<5%), and without any dependencies around multi-robot-embodiment collect or multiple stages of training. We note that this is a scale of collect more comparable to modern single-task imitation learning datasets. Despite this comparatively small data requirement, Helix scales to the significantly more challenging action space of full upper body humanoid control, with high-rate, high-dimensional outputs.
+A single set of weights
+Existing VLA systems often require specialized fine-tuning or dedicated action heads to optimize performance across different high-level behaviors. Remarkably, Helix achieves strong performance across diverse tasks with a single unified model. Using just one set of neural network weights (7B for System 2, 80M for System 1), Helix picks and places items in various containers, operates drawers and refrigerators, coordinates dexterous multi-robot handovers, and manipulates thousands of novel objects.
+We have presented Helix, the first Vision-Language-Action model to directly control an entire humanoid upper body from natural language. Unlike earlier robot systems, Helix is capable of generating long-horizon, collaborative, dexterous manipulation on the fly without any task-specific demonstrations or extensive manual programming. Helix displays strong object generalization, being able to pick up thousands of novel household items with varying shapes, sizes, colors, and material properties never encountered before in training, simply by asking in natural language. This represents a transformative step forward in how Figure scales humanoid robot behaviors—one that we believe will be pivotal as our robots increasingly assist in everyday home environments.
+While these early results are truly exciting, we think they only scratch the surface of what is possible. We are eager to see what happens when we scale Helix by 1,000x and beyond. If you’re as fascinated by the possibilities of Helix—and the future of dexterous humanoid robotics, we invite you to join us on this journey.
+Consider joining our Helix team to help scale Embodied AI to millions of robots. Check out our open roles here.",FigureAI
+"Tue, 25 Feb 2025 08:00:00 GMT",Superintendent's Spotlight: Wildcats Robotics Team,"Superintendent's Spotlight: Wildcats Robotics Team
+The Warwick Valley Wildcats Robotics team is gearing for their biggest challenge yet: the NY Excelsior FIRST Tech Regional Championship on March 8 and 9 in Utica. The stakes are high, as only the top three teams in the region will advance to April’s World Championships in Houston.
+To say the Wildcats Robotics team is a dedicated bunch would be an understatement. Team members spent their entire February recess inside the high school’s tech room with team advisors and Warwick Valley High School teachers Andrew Warren, Doreen Fothergill and Ray Mark, reengineering their design for the upcoming regional challenge. Despite the pressure being on, the atmosphere in the lab was notably anxiety free. In fact, it was calm, upbeat and confident.
+“I think one of the biggest things about this season is, yeah, we take ourselves seriously, but you can't take it too seriously,” said senior team member Abagail Foust. “We still have fun. We all enjoy being around each other.”
+The Wildcats Robotics team is comprised of three subgroups: building, coding and outreach. “The students on the building team do a lot of the actual physical building of the robot and 3D modeling,” explained Abagail, who manages outreach. “The code team codes the robot, which includes a lot of troubleshooting. And the outreach team creates the portfolio, organizes events and handles team communication overall.”
+It took a total team effort at the Peekskill FIRST Tech Challenge earlier this month to secure the Wildcats regional berth. The team’s robot performed admirably but ultimately came up just shy of qualifying marks for the regional championship. However, the team clinched 3rd place for the significant Inspire Award, which recognizes teams that best exemplify the overall spirit and values of the FIRST Tech program, showcasing not only strong engineering skills, but also community outreach and gracious professionalism in all aspects of participation.
+“Unfortunately, we didn’t score as well as we could have, but we had worked hard on improving our portfolio before that event, and that proved beneficial,” said Abagail.
+Placing for the Inspire Award, boosted the Wildcats overall score and catapulted them into qualifier status.
+Upgrades to the team's bot have it ready for regional competition.
+“It was really rewarding the way things have paid off,” said Mr. Warren. “Not only having a strong robot and making it to the finals of our first two qualifiers, but placing for the prestigious Inspire Award, which was a really big deal for the team. It’s been to be able to reassure the kids that the ways they’ve reengineered our design have been the right moves!”
+The Wildcats apply the Engineering Design Process to everything they do – identifying challenges, conceptualizing solutions, building and implementing those solutions, then readjusting and retesting. In a midseason design breakthrough, the team overcame struggles with an oversized and inefficient claw mechanism.
+“We redesigned one of our claws so that we could pick up the blocks with more precision,” Abagail explained. “The change allowed us to cycle more rapidly in terms of scoring.”
+Jamie Curtis, a student on the build team, highlighted some of the Wildcat robot’s upgrades.
+“Our current design uses vertical and horizontal extensions with claws that transfer between them, which makes it a lot more efficient at scoring,” he said. “One of the things we found was that adding more complexity can actually be beneficial. You can’t oversimplify everything.”
+The Wildcats Robotic team was founded by Mr. Warren just three years ago, and its popularity has skyrocketed! Students from every grade level have gotten involved, and the team’s upward trajectory and competitiveness have shown the benefits of the increased engagement.
+“Last year, we went from five members to 14 members,” Arnav Sinha, a sophomore, explained. “While we didn’t qualify for states [previously], it was still a great learning experience. All the freshmen back then learned all the fundamentals of robotics, how to code, how to build.”
+Mentorship is another cornerstone of the Wildcats’ success, with community members, teachers, and professionals offering guidance. For example, there is a lot of collaboration between the team and faculty, such as engineering teacher Pat Reiser and computer science teacher Pete Scheuermann, who have assisted with things like CAD modeling, programming, and guidance on specialized equipment in the tech labs.
+“One of the biggest things we’ve kind of focused on this year is mentorship and how important it is to have other professionals weigh in on what we’re doing,” Abagail explained.
+Peer communication and learning are also at the core of the Wildcats Robotics team, as members are encouraged to share their knowledge freely with one another. Senior team member Jack Carter shared a perfect example.
+“Like with RJ [Carroll] here – he’s a sophomore – he's actually taught me how to do some things like 3D modeling and how to work with 3D printers, which is still kind of new to me still.”
+Sophomore Luke Fowler also credits his teammates for teaching him the ins and outs of engineering and mechanics. He also feels the team and his teammates have helped him become a better communicator, something he struggled with in the past.
+“It’s when I got into robotics that I learned how to talk with other people a lot better,” he said. “And I feel like I get much more involved with groups now.”
+Abagail and Jack have been inspired by their involvement with the Wildcats Robotics team to follow post-graduation pathways into engineering fields. Abagail said that her college entrance essays about her robotics team experiences played a big role in getting accepted to Clarkson University’s Solinsky Engineers Program, where she’ll be studying mechanical engineering in the fall. Jack plans to attend Penn State to focus on lab research.
+“One of the things I'm looking forward to is checking out their labs, where you basically get to create anything that you want – as long as it's safe,” he laughed. “But otherwise, your only limit is your imagination.”
+With the regional competition just days away, the Wildcats Robotics team is confident that their teamwork, perseverance, and focus on fun will continue to take them to new heights – possibly all the way to Houston, where world championship dreams await. And as nice as a state title would be, the Wildcats remain focused on recruitment and growing the camaraderie that’s become a hallmark of their team.
+As Abagail suggests, all fans of lifelong learning are welcome to join.
+“This team fosters an environment where you don't need to know anything about STEM to join,” she said. “You just have to want to learn!”",warwickvalleyschools.com

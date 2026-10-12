@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 import json
 from typing import TypeVar
 
@@ -84,7 +84,15 @@ class MockLLMClient:
             )
         if response_model is PredictionDraft:
             thesis = context.get("thesis", {})
-            start = date.today()
+            evidence_dates = []
+            for item in thesis.get("evidence", []):
+                timestamp = item.get("timestamp") if isinstance(item, dict) else None
+                if timestamp:
+                    try:
+                        evidence_dates.append(datetime.fromisoformat(timestamp.replace("Z", "+00:00")).date())
+                    except (TypeError, ValueError):
+                        continue
+            start = max(evidence_dates, default=date.today())
             return response_model.model_validate(
                 {
                     "target": thesis.get("ticker", "UNKNOWN"),
