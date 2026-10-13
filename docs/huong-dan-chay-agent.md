@@ -139,19 +139,6 @@ Run trả mã `0` khi replay có prediction và evaluation được liên kết;
 chưa đạt cả hai điều kiện. Ví dụ replay bắt đầu đúng ngày đầu tiên có giá có
 thể chưa có baseline và vì vậy chưa tạo được prediction.
 
-## Câu hỏi cho mentee trước vòng tối ưu
-
-1. Event nào được gắn vào thesis ticker khác với công ty trong tin? Nên chặn ở
-   source adapter, router hay trước khi update thesis? Vì sao?
-2. Horizon được tính từ các row giá như thế nào? Làm sao phát hiện khoảng trống
-   dữ liệu để không gọi một khoảng lịch dài là “5 phiên giao dịch”?
-3. Feedback nào được đưa vào prompt? Có event nào vô tình nhìn thấy kết quả xảy
-   ra sau ngày đăng của nó không?
-4. `matching_score` có đo được chất lượng dự báo không? Nên báo cáo direction,
-   calibration, return benchmark và độ phủ riêng ra sao?
-5. Vòng tới chỉ thay đổi một giả thuyết nào? Giữ nguyên dataset, model và evaluator
-   nào để phép so sánh có ý nghĩa; cần holdout nào để tránh tối ưu vào chính replay?
-
 ## Giới hạn đã biết cần giữ trong đầu
 
 - Company tags là nhận diện theo chuỗi tên/ticker trong nội dung; không phải
