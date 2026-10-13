@@ -111,7 +111,6 @@ def main(argv: list[str] | None = None) -> int:
         llm_label=llm_label,
         storage_path=repository.path,
     )
-    _print_optimization_questions()
     return 0 if run_prediction_ids and linked_evaluations else 2
 
 
@@ -336,41 +335,6 @@ def _print_run_summary(
     print(f"  E2E completion:                   {'passed' if passed else 'incomplete'} (exit {0 if passed else 2})")
     print("  Matching score is a pipeline diagnostic, not standalone forecast accuracy.")
     print("=" * 88)
-
-
-def _print_optimization_questions() -> None:
-    groups = [
-        (
-            "EVENT + ANALYZE",
-            [
-                "Những event AI infra, LLM và energy nào đủ bằng chứng để phân tích chung? Đặt cửa sổ thời gian và tiêu chí loại robotics ra sao, trừ khi có liên hệ cụ thể?",
-                "Gộp event ở bước nào để phân tích tốt hơn xử lý từng event? So sánh hai cách bằng cùng dữ liệu và tiêu chí chất lượng, độ trễ, chi phí nào?",
-                "Khi gộp, làm sao giữ nguồn và thời điểm của từng event, đồng thời tránh tin trùng hoặc bằng chứng trái chiều bị mất?",
-            ],
-        ),
-        (
-            "PREDICT + IMPROVE",
-            [
-                "Mục tiêu cần tối ưu là gì: đúng chiều, độ lớn, calibration hay return so với benchmark? Metric hiện tại chưa đo được phần nào?",
-                "Feedback nào được phép làm thay đổi thesis hoặc prediction? Làm sao đảm bảo chỉ dùng kết quả đã biết tại thời điểm event?",
-                "Thiết kế baseline và holdout theo thời gian thế nào để thử một thay đổi, giữ cố định model/đầu vào/ngân sách và phát hiện chất lượng giảm?",
-            ],
-        ),
-        (
-            "TOOLS + DATA ENGINEERING",
-            [
-                "Chuẩn hóa ticker, công ty, domain, timestamp/timezone và schema nguồn khác nhau thế nào mà vẫn giữ lại dữ liệu gốc để truy vết?",
-                "Phân biệt bản tin trùng, bài syndicated và bài gần giống ra sao? Khi khử trùng, cần giữ những ID/source nào?",
-                "Các quality check nào cần báo missing/stale/invalid/ambiguous data, và làm sao phân biệt không có tin với collector bị lỗi?",
-                "Giao diện dữ liệu nào giúp analysis nhận một event hoặc bundle kèm provenance, confidence và cảnh báo chất lượng?",
-            ],
-        ),
-    ]
-    print("\nCÂU HỎI CHO VÒNG TỐI ƯU TIẾP THEO")
-    for role, questions in groups:
-        print(f"\n  {role}")
-        for index, question in enumerate(questions, start=1):
-            print(f"    {index}. {question}")
 
 
 if __name__ == "__main__":
