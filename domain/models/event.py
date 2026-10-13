@@ -32,6 +32,7 @@ class Event(BaseModel):
     source: str = Field(min_length=1)
     title: str = Field(min_length=1)
     content: str = Field(min_length=1)
+    domain: str | None = None
     companies_mentioned: list[str] = Field(default_factory=list)
     sectors: list[str] = Field(default_factory=list)
     nature: EventNature = EventNature.FACT

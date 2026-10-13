@@ -61,8 +61,8 @@ class CsvEventSourceAdapter(SourceAdapter):
             return sorted(self.path.rglob("*.csv"))
         raise FileNotFoundError(f"CSV event source does not exist: {self.path}")
 
-    def fetch_events(self, query: str = "", *, limit: int = 10) -> list[Event]:
-        if limit < 1:
+    def fetch_events(self, query: str = "", *, limit: int | None = 10) -> list[Event]:
+        if limit is not None and limit < 1:
             raise ValueError("limit must be at least 1")
         query_text = query.strip().casefold()
         events: list[Event] = []
@@ -90,6 +90,7 @@ class CsvEventSourceAdapter(SourceAdapter):
                         continue
                     seen.add(fingerprint)
                     companies = self._find_companies(f"{title}\n{content}")
+                    domain = (row.get("domain") or "").strip().casefold() or None
                     events.append(
                         Event(
                             id=f"csv-{fingerprint}",
@@ -97,11 +98,12 @@ class CsvEventSourceAdapter(SourceAdapter):
                             source=source,
                             title=title,
                             content=content,
+                            domain=domain,
                             companies_mentioned=companies,
                         )
                     )
         events.sort(key=lambda item: (item.published_at, item.id))
-        return events[:limit]
+        return events if limit is None else events[:limit]
 
     def _find_companies(self, text: str) -> list[str]:
         matches: list[tuple[int, str]] = []

@@ -71,23 +71,26 @@ when selected by a caller.
 
 ## V1 CSV feedback replay
 
-When the `eric-dev` news CSVs are available at `data/raw_news_websearch/` and
-daily prices are available under `data/market/`, run:
+Prepare one `data/events.csv` by combining the desired news rows and retaining
+their `domain` column. It must include `published_at,title,content,source,domain`.
+The ticker map is also a CSV. Daily prices use the standard file under
+`data/market/`.
 
 ```bash
 python -m app.e2e \
-  --events data/raw_news_websearch \
-  --prices data/market/stock_prices_daily.csv \
+  --events data/events.csv \
   --tickers data/stock_tickers.csv \
-  --query NVIDIA \
-  --limit 20
+  --start-date 2025-01-01 \
+  --end-date 2025-03-31
 ```
 
 This uses the deterministic mock LLM unless `--openai` is supplied. It derives
 a five-session price window, resolves predictions from adjusted closes, stores
 evaluation records, and includes only outcomes observed before an event in the
-next analysis prompt. This V1 replay checks the feedback loop; it does not
+next analysis prompt. The date range filters event publication dates; prices
+must also cover the baseline before the range and sessions after the final event.
+This V1 replay checks the feedback loop; it does not
 calculate sector-adjusted returns or establish forecast accuracy.
 
 Read the [Vietnamese CLI and pipeline guide](docs/huong-dan-chay-agent.md) for
-the stage-by-stage flow, debug output, and mentee optimization questions.
+the stage-by-stage flow, CSV contract, date filtering, and debug output.

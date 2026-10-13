@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import os
 from collections import Counter
+from datetime import date
 from pathlib import Path
 
 from domain.models.evaluation import Evaluation
@@ -17,28 +19,42 @@ from service.pipelines.layers.evaluation_layer import EvaluationLayer
 from service.pipelines.layers.prediction_layer import PredictionLayer
 from service.pipelines.pipeline import MarketHypothesisPipeline, PipelineResult
 
+PRICE_DATA_PATH = Path("data/market/stock_prices_daily.csv")
+EVENT_COLUMNS = {"published_at", "title", "content", "source", "domain"}
+TICKER_COLUMNS = {"ticker", "company", "domain", "currency"}
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Replay news CSV events through analysis, prediction, market resolution, and feedback."
     )
-    parser.add_argument("--events", type=Path, default=Path("data/raw_news_websearch"))
-    parser.add_argument("--prices", type=Path, default=Path("data/market/stock_prices_daily.csv"))
-    parser.add_argument("--tickers", type=Path, default=Path("data/stock_tickers.csv"))
-    parser.add_argument("--query", default="", help="Optional case-insensitive article text filter")
-    parser.add_argument("--limit", type=int, default=100)
+    parser.add_argument("--events", type=Path, required=True, help="One events CSV file")
+    parser.add_argument("--tickers", type=Path, required=True, help="Ticker/company CSV file")
+    parser.add_argument(
+        "--start-date",
+        type=_parse_date,
+        required=True,
+        help="First event date to include (UTC)",
+    )
+    parser.add_argument(
+        "--end-date",
+        type=_parse_date,
+        required=True,
+        help="Last event date to include (UTC)",
+    )
     parser.add_argument("--data-dir", type=Path, default=Path("data_storage/e2e"))
     parser.add_argument("--openai", action="store_true", help="Use OpenAI instead of the deterministic mock")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
-    if args.limit < 1:
-        raise SystemExit("--limit must be at least 1")
-    for path in (args.events, args.prices, args.tickers):
-        if not path.exists():
-            raise SystemExit(f"Required input does not exist: {path}")
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.start_date > args.end_date:
+        parser.error("--start-date must be on or before --end-date")
+    _validate_csv(parser, args.events, "events", EVENT_COLUMNS)
+    _validate_csv(parser, args.tickers, "tickers", TICKER_COLUMNS)
+    _validate_csv(parser, PRICE_DATA_PATH, "stock prices", {"ticker", "trade_date", "close"})
 
     llm = MockLLMClient()
     if args.openai:
@@ -51,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
 
     repository = JsonRepository(args.data_dir / "records.json")
     source = CsvEventSourceAdapter(args.events, args.tickers)
-    outcomes = StockPriceOutcomeResolver(args.prices, args.tickers)
+    outcomes = StockPriceOutcomeResolver(PRICE_DATA_PATH, args.tickers)
     pipeline = MarketHypothesisPipeline(
         source=source,
         analysis=AnalysisLayer(llm, repository),
@@ -64,7 +80,11 @@ def main(argv: list[str] | None = None) -> int:
     previous_evaluation_ids = {item.id for item in repository.list(Evaluation)}
     previous_prediction_ids = {item.id for item in repository.list(Prediction)}
     _print_run_header(args, llm_label)
-    results = pipeline.run(args.query, limit=args.limit)
+    results = pipeline.run(
+        limit=None,
+        start_date=args.start_date,
+        end_date=args.end_date,
+    )
     predictions = repository.list(Prediction)
     evaluations = repository.list(Evaluation)
     realities = {item.id: item for item in repository.list(Reality)}
@@ -114,15 +134,39 @@ def main(argv: list[str] | None = None) -> int:
     return 0 if run_prediction_ids and linked_evaluations else 2
 
 
+def _parse_date(value: str) -> date:
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("date must use YYYY-MM-DD") from exc
+
+
+def _validate_csv(
+    parser: argparse.ArgumentParser,
+    path: Path,
+    label: str,
+    required_columns: set[str],
+) -> None:
+    if path.suffix.casefold() != ".csv" or not path.is_file():
+        parser.error(f"{label} input must be an existing .csv file: {path}")
+    try:
+        with path.open(newline="", encoding="utf-8-sig") as stream:
+            columns = set(csv.DictReader(stream).fieldnames or [])
+    except OSError as exc:
+        parser.error(f"cannot read {label} CSV {path}: {exc}")
+    missing = required_columns - columns
+    if missing:
+        parser.error(f"{label} CSV is missing columns: {', '.join(sorted(missing))}")
+
+
 def _print_run_header(args: argparse.Namespace, llm_label: str) -> None:
     print("=" * 88)
     print("CSV FEEDBACK REPLAY — RUN CONFIGURATION")
     print(f"LLM:       {llm_label}")
     print(f"Events:    {args.events}")
-    print(f"Prices:    {args.prices}")
+    print(f"Prices:    {PRICE_DATA_PATH}")
     print(f"Tickers:   {args.tickers}")
-    print(f"Query:     {args.query or '(none; all articles)'}")
-    print(f"Limit:     {args.limit}")
+    print(f"Date range: {args.start_date} through {args.end_date} (UTC, inclusive)")
     print(f"Data dir:  {args.data_dir}")
     print("=" * 88)
 

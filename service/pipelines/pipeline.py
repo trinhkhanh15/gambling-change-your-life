@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import date, datetime, timezone
 
 from application.ports.repository import Repository
 from application.ports.source import SourceAdapter
@@ -44,12 +45,29 @@ class MarketHypothesisPipeline:
         if outcome_resolver is not None and evaluation is None:
             raise ValueError("evaluation is required when an outcome resolver is configured")
 
-    def run(self, query: str, *, limit: int = 10) -> list[PipelineResult]:
+    def run(
+        self,
+        query: str = "",
+        *,
+        limit: int | None = 10,
+        start_date: date | None = None,
+        end_date: date | None = None,
+    ) -> list[PipelineResult]:
+        if (start_date is None) != (end_date is None):
+            raise ValueError("start_date and end_date must be provided together")
+        if start_date is not None and end_date is not None and start_date > end_date:
+            raise ValueError("start_date must be on or before end_date")
         results = []
         events = sorted(
             self._source.fetch_events(query, limit=limit),
             key=lambda item: (item.published_at, item.id),
         )
+        if start_date is not None and end_date is not None:
+            events = [
+                event
+                for event in events
+                if start_date <= self._utc_date(event.published_at) <= end_date
+            ]
         for event in events:
             self._resolve_due(event.published_at.date(), include_same_day=False)
             self._repository.save(event)
@@ -94,6 +112,12 @@ class MarketHypothesisPipeline:
         if self._outcome_resolver is not None and self._outcome_resolver.latest_date is not None:
             self._resolve_due(self._outcome_resolver.latest_date, include_same_day=True)
         return results
+
+    @staticmethod
+    def _utc_date(value: datetime) -> date:
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc).date()
 
     def _resolve_due(self, as_of, *, include_same_day: bool) -> list[Evaluation]:
         if self._outcome_resolver is None or self._evaluation is None:

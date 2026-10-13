@@ -23,10 +23,10 @@ class TavilySourceAdapter(SourceAdapter):
             raise RuntimeError("Install requirements.txt to use TavilySourceAdapter") from exc
         self._client = TavilyClient(api_key=key)
 
-    def fetch_events(self, query: str, *, limit: int = 10) -> list[Event]:
+    def fetch_events(self, query: str, *, limit: int | None = 10) -> list[Event]:
         response = self._client.search(
             query=query,
-            max_results=limit,
+            max_results=10 if limit is None else limit,
             search_depth="advanced",
             include_raw_content=True,
         )

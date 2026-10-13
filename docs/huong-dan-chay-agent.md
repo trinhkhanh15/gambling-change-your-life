@@ -8,16 +8,20 @@ hiệu chẩn đoán pipeline, không chứng minh agent dự báo thị trườ
 
 ## Chạy replay
 
-Từ thư mục gốc của repo:
+Chuẩn bị một CSV gộp các event muốn chạy. Dữ liệu collector hiện được chia theo
+tháng/domain; khi gộp, giữ cột `domain` để biết event thuộc nhóm nào. CSV cần có
+các cột `published_at,title,content,source,domain`. Bảng ticker cần có
+`ticker,company,domain,currency`.
+
+Từ thư mục gốc của repo, chọn khoảng ngày event muốn replay:
 
 ```bash
 python -m app.e2e \
-  --events data/raw_news_websearch \
-  --prices data/market/stock_prices_daily.csv \
+  --events data/events.csv \
   --tickers data/stock_tickers.csv \
-  --query NVIDIA \
-  --limit 20 \
-  --data-dir data_storage/replays/nvidia-mock
+  --start-date 2025-01-01 \
+  --end-date 2025-03-31 \
+  --data-dir data_storage/replays/q1-mock
 ```
 
 Mặc định CLI dùng `MockLLMClient` xác định để chạy nhanh và không gọi dịch vụ
@@ -25,12 +29,11 @@ bên ngoài. Muốn dùng OpenAI, đặt `OPENAI_API_KEY` rồi thêm `--openai`
 
 ```bash
 python -m app.e2e \
-  --events data/raw_news_websearch \
-  --prices data/market/stock_prices_daily.csv \
+  --events data/events.csv \
   --tickers data/stock_tickers.csv \
-  --query NVIDIA \
-  --limit 20 \
-  --data-dir data_storage/replays/nvidia-openai \
+  --start-date 2025-01-01 \
+  --end-date 2025-03-31 \
+  --data-dir data_storage/replays/q1-openai \
   --openai
 ```
 
@@ -38,6 +41,12 @@ CLI hiện dùng model mặc định `gpt-5.4-mini` khi bật `--openai`. Mỗi 
 nên dùng `--data-dir` riêng nếu muốn so sánh các run; nếu dùng lại thư mục,
 thesis, prediction và evaluation cũ vẫn nằm trong JSON repository và có thể
 được đưa vào feedback của event sau.
+
+`--start-date` và `--end-date` lọc ngày đăng event theo UTC và bao gồm cả hai
+đầu mút. CSV giá luôn lấy từ `data/market/stock_prices_daily.csv`, không bị cắt
+theo khoảng event: cần giá trước ngày bắt đầu để làm baseline và các phiên sau
+event cuối để resolve horizon. Nếu CSV giá thiếu các ngày đó, prediction có thể
+chưa được đánh giá trong run.
 
 ## Thu thập news/report data
 
@@ -62,19 +71,21 @@ CLI replay; để đọc data có sẵn thì chạy `python -m app.e2e` ở ph�
 
 | Tham số | Ý nghĩa |
 | --- | --- |
-| `--events` | Một CSV hoặc thư mục CSV tin tức; mặc định `data/raw_news_websearch`. |
-| `--prices` | CSV giá ngày dùng để tạo market window và resolve prediction. |
-| `--tickers` | Bảng ticker/company dùng để nhận diện tên công ty và canonical ticker. |
-| `--query` | Lọc không phân biệt hoa thường trên title và content. Đây là text filter, không phải bộ lọc ticker chính xác. |
-| `--limit` | Số event tối đa sau lọc; event được xử lý theo thời gian tăng dần. |
+| `--events` | Một file CSV event duy nhất; cần `published_at,title,content,source,domain`. |
+| `--tickers` | File CSV ticker/company; cần `ticker,company,domain,currency`. |
+| `--start-date` | Ngày event đầu tiên, định dạng `YYYY-MM-DD`, tính theo UTC và được bao gồm. |
+| `--end-date` | Ngày event cuối cùng, định dạng `YYYY-MM-DD`, tính theo UTC và được bao gồm. |
 | `--data-dir` | Thư mục chứa `records.json`; dữ liệu tồn tại ở đây được nạp lại cho run sau. |
 | `--openai` | Dùng `OpenAIAdapter`; nếu không có cờ này, dùng mock xác định. |
+
+Giá luôn đọc từ `data/market/stock_prices_daily.csv`. CLI xử lý tất cả event
+trong khoảng ngày, không giới hạn số dòng ngầm định.
 
 ## Luồng chạy
 
 ```text
 News CSV
-   ↓ lọc query, bỏ dòng lỗi/duplicate, nhận diện company tags, sort theo thời gian
+   ↓ lọc ngày, bỏ dòng lỗi/duplicate, nhận diện company tags, sort theo thời gian
 Event
    ↓ router: IGNORE / GENERATE_THESIS / UPDATE_THESIS
 Thesis
@@ -94,7 +105,7 @@ thử resolve các prediction còn active tới ngày giá mới nhất trong CS
 
 ## Đọc trace trong terminal
 
-Mỗi run bắt đầu bằng cấu hình: LLM/provider, file đầu vào, query, limit và nơi
+Mỗi run bắt đầu bằng cấu hình: LLM/provider, file đầu vào, khoảng ngày và nơi
 lưu records. Đối chiếu phần này trước khi so hai run để biết chúng có dùng cùng
 model, dữ liệu và storage hay không.
 
@@ -149,8 +160,8 @@ thể chưa có baseline và vì vậy chưa tạo được prediction.
   và evidence từng event trước khi dùng điểm evaluation để kết luận.
 - CSV giá hiện không cung cấp actual drivers, nên thành phần drivers thường là
   `not assessed`.
-- Tăng `--limit` làm run dài hơn; khi dùng OpenAI, mỗi event có thể phát sinh
-  nhiều lời gọi LLM và tiêu tốn API.
+- Chọn khoảng ngày dài làm run lâu và tốn API hơn khi dùng OpenAI; mỗi event có
+  thể phát sinh nhiều lời gọi LLM.
 
 ## Thứ tự học/đọc code
 
