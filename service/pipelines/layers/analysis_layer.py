@@ -12,25 +12,42 @@ from domain.models.thesis import Thesis, ThesisDraft, ThesisStatus
 
 
 class AnalysisLayer:
-    def __init__(self, llm: LLMClient, repository: Repository):
+    def __init__(
+        self,
+        llm: LLMClient,
+        repository: Repository,
+        valid_tickers: list[str] | None = None,
+    ):
         self._llm = llm
         self._repository = repository
+        self._valid_tickers = valid_tickers or []
 
     def generate_thesis(self, event: Event, recent_feedback: list[dict] | None = None) -> Thesis:
-        prompt = "Generate a falsifiable business thesis from this event.\nCONTEXT_JSON\n" + json.dumps(
-            {
-                "event": event.model_dump(mode="json"),
-                "recent_resolved_feedback": recent_feedback or [],
-            },
-            ensure_ascii=False,
+        ticker_constraint = ""
+        if self._valid_tickers:
+            ticker_constraint = (
+                "\nCRITICAL REQUIREMENT: The 'ticker' field MUST strictly be one of these valid stock symbols: "
+                + ", ".join(self._valid_tickers)
+                + ". If the event affects an industry or macro theme, choose the single company from this list that is most directly impacted. Do NOT use index tickers, ETFs (e.g. XLU, SPY, QQQ), or any ticker not in this list."
+            )
+        prompt = (
+            f"Generate a falsifiable business thesis from this event.{ticker_constraint}\nCONTEXT_JSON\n"
+            + json.dumps(
+                {
+                    "event": event.model_dump(mode="json"),
+                    "recent_resolved_feedback": recent_feedback or [],
+                },
+                ensure_ascii=False,
+            )
         )
         draft = ThesisDraft.model_validate(
             self._llm.generate_response(system_prompt=prompt, response_model=ThesisDraft)
         )
+        ticker_val = draft.ticker.strip().split()[0].upper().strip("(),;:.")
         now = event.published_at
         thesis = Thesis(
             id=f"thesis-{uuid4().hex[:12]}",
-            ticker=draft.ticker,
+            ticker=ticker_val,
             core_claim=draft.core_claim,
             core_assumptions=draft.core_assumptions,
             status=ThesisStatus.ACTIVE,

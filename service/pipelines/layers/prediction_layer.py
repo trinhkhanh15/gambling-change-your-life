@@ -27,13 +27,19 @@ class PredictionLayer:
         if len(active) > 1:
             raise ValueError(f"thesis {thesis.id} has multiple active predictions")
 
-        prompt = "Create a measurable prediction from this thesis.\nCONTEXT_JSON\n" + json.dumps(
-            {"thesis": thesis.model_dump(mode="json")}, ensure_ascii=False
+        prompt = (
+            "Create a measurable prediction from this thesis. "
+            "CRITICAL requirement for 'expected_change_pct': must be a decimal fraction (e.g. 0.03 for +3% or -0.05 for -5%), "
+            "do NOT provide whole numbers like 3.0 or 5.0.\n"
+            "CONTEXT_JSON\n"
+            + json.dumps({"thesis": thesis.model_dump(mode="json")}, ensure_ascii=False)
         )
         draft = PredictionDraft.model_validate(
             self._llm.generate_response(system_prompt=prompt, response_model=PredictionDraft)
         )
         draft_fields = draft.model_dump()
+        if abs(draft_fields.get("expected_change_pct", 0.0)) >= 1.0:
+            draft_fields["expected_change_pct"] = draft_fields["expected_change_pct"] / 100.0
         if market_context:
             draft_fields.update(market_context)
         version = max((p.version for p in history), default=0) + 1

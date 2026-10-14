@@ -18,6 +18,8 @@ class JsonRepository(Repository):
     def __init__(self, path: str | Path):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._cache: dict | None = None
+        self._cache_mtime_ns: int | None = None
 
     def save(self, entity: T) -> T:
         self.save_many([entity])
@@ -50,7 +52,23 @@ class JsonRepository(Repository):
 
     def _read(self) -> dict:
         if not self.path.exists():
-            return {"schema_version": 1, "records": {}}
+            if self._cache is None:
+                self._cache = {"schema_version": 1, "records": {}}
+                self._cache_mtime_ns = None
+            return self._cache
+
+        try:
+            current_mtime = self.path.stat().st_mtime_ns
+        except OSError:
+            current_mtime = None
+
+        if (
+            self._cache is not None
+            and self._cache_mtime_ns is not None
+            and current_mtime == self._cache_mtime_ns
+        ):
+            return self._cache
+
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
@@ -61,16 +79,23 @@ class JsonRepository(Repository):
             or not isinstance(data.get("records"), dict)
         ):
             raise ValueError("unsupported JSON repository format")
+
+        self._cache = data
+        self._cache_mtime_ns = current_mtime
         return data
 
     def _write(self, data: dict) -> None:
+        self._cache = data
         fd, temp_name = tempfile.mkstemp(prefix=f".{self.path.name}.", suffix=".tmp", dir=self.path.parent)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as temp_file:
                 json.dump(data, temp_file, ensure_ascii=False, indent=2)
                 temp_file.flush()
-                os.fsync(temp_file.fileno())
             os.replace(temp_name, self.path)
+            try:
+                self._cache_mtime_ns = self.path.stat().st_mtime_ns
+            except OSError:
+                self._cache_mtime_ns = None
         finally:
             if os.path.exists(temp_name):
                 os.unlink(temp_name)
