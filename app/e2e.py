@@ -3,9 +3,16 @@ from __future__ import annotations
 import argparse
 import csv
 import os
+import sys
 from collections import Counter
+
+csv.field_size_limit(sys.maxsize)
 from datetime import date
 from pathlib import Path
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from domain.models.evaluation import Evaluation
 from domain.models.prediction import Prediction
@@ -44,7 +51,25 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--data-dir", type=Path, default=Path("data_storage/e2e"))
     parser.add_argument("--openai", action="store_true", help="Use OpenAI instead of the deterministic mock")
+    parser.add_argument(
+        "--model",
+        type=str,
+        default="gpt-5.6-luna",
+        help="OpenAI model to use (default: gpt-5.6-luna)",
+    )
     return parser
+
+
+def _extract_valid_tickers(tickers_path: Path) -> list[str]:
+    tickers: list[str] = []
+    with tickers_path.open(newline="", encoding="utf-8-sig") as stream:
+        reader = csv.DictReader(stream)
+        for row in reader:
+            ticker = (row.get("ticker") or "").strip().upper()
+            company = (row.get("company") or "").strip()
+            if ticker:
+                tickers.append(f"{ticker} ({company})" if company else ticker)
+    return tickers
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -60,17 +85,18 @@ def main(argv: list[str] | None = None) -> int:
     if args.openai:
         from infra.llm.openai_adapter import OpenAIAdapter
 
-        llm = OpenAIAdapter(api_key=os.getenv("OPENAI_API_KEY"))
+        llm = OpenAIAdapter(api_key=os.getenv("OPENAI_API_KEY"), model=args.model)
         llm_label = f"OpenAI / {llm.model_name}"
     else:
         llm_label = "MockLLMClient (deterministic)"
 
+    valid_tickers = _extract_valid_tickers(args.tickers)
     repository = JsonRepository(args.data_dir / "records.json")
     source = CsvEventSourceAdapter(args.events, args.tickers)
     outcomes = StockPriceOutcomeResolver(PRICE_DATA_PATH, args.tickers)
     pipeline = MarketHypothesisPipeline(
         source=source,
-        analysis=AnalysisLayer(llm, repository),
+        analysis=AnalysisLayer(llm, repository, valid_tickers=valid_tickers),
         prediction=PredictionLayer(llm, repository),
         repository=repository,
         outcome_resolver=outcomes,

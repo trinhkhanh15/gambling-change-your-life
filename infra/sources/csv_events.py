@@ -4,8 +4,11 @@ import csv
 import email.utils
 import hashlib
 import re
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+csv.field_size_limit(sys.maxsize)
 
 from application.ports.source import SourceAdapter
 from domain.models.event import Event
