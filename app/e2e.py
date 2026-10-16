@@ -115,12 +115,17 @@ def main(argv: list[str] | None = None) -> int:
     previous_evaluation_ids = {item.id for item in repository.list(Evaluation)}
     previous_prediction_ids = {item.id for item in repository.list(Prediction)}
     _print_run_header(args, llm_label)
-    results = pipeline.run(
-        limit=None,
-        start_date=args.start_date,
-        end_date=args.end_date,
-        on_result=lambda done, total, result: _print_progress(done, total, result, llm, progress_state),
-    )
+    try:
+        results = pipeline.run(
+            limit=None,
+            start_date=args.start_date,
+            end_date=args.end_date,
+            on_result=lambda done, total, result: _print_progress(done, total, result, llm, progress_state),
+        )
+    except BaseException:
+        if args.openai:  # a crashed or interrupted run still spent money
+            _record_llm_cost(llm, args, repository)
+        raise
     predictions = repository.list(Prediction)
     evaluations = repository.list(Evaluation)
     realities = {item.id: item for item in repository.list(Reality)}

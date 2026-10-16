@@ -1,3 +1,4 @@
+import difflib
 import re
 from uuid import uuid4
 
@@ -93,6 +94,14 @@ class AnalysisLayer:
             return decision, self.generate_thesis(event, recent_feedback)
 
         target = next((item for item in active_theses if item.id == decision.target_thesis_id), None)
+        if target is None:
+            # LLMs sometimes mis-copy a few characters of a 12-hex id; repair it against the shown candidates only.
+            close = difflib.get_close_matches(
+                decision.target_thesis_id or "", [item.id for item in candidates], n=1, cutoff=0.8
+            )
+            target = next((item for item in candidates if close and item.id == close[0]), None)
+            if target is not None:
+                decision = decision.model_copy(update={"target_thesis_id": target.id})
         if target is None:
             raise ValueError(f"router selected unknown or inactive thesis: {decision.target_thesis_id}")
         update_prompt = render_prompt(

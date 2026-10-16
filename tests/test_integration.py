@@ -246,3 +246,26 @@ def test_reason_score_is_not_assessed_without_actual_drivers(tmp_path):
 
     assert evaluation.reason_score is None
     assert evaluation.matching_score == 1.0
+
+
+def test_router_id_with_a_mistyped_tail_is_repaired_to_the_candidate(tmp_path):
+    from domain.models.routing import RouterDecision
+
+    class TypoRouterLLM(MockLLMClient):
+        def generate_response(self, *, system_prompt, response_model):
+            response = super().generate_response(system_prompt=system_prompt, response_model=response_model)
+            if response_model is RouterDecision and response.target_thesis_id:
+                return response.model_copy(update={"target_thesis_id": response.target_thesis_id[:-2] + "zz"})
+            return response
+
+    repository = JsonRepository(tmp_path / "records.json")
+    llm = TypoRouterLLM()
+    analysis = AnalysisLayer(llm, repository)
+    first = Event(id="e1", source="s", title="ACME raises guidance", content="ACME demand", companies_mentioned=["ACME"])
+    second = Event(id="e2", source="s", title="ACME expands", content="ACME demand grows", companies_mentioned=["ACME"])
+
+    _, thesis = analysis.process_event(first)
+    decision, updated = analysis.process_event(second)
+
+    assert decision.target_thesis_id == thesis.id
+    assert updated.id == thesis.id and len(updated.evidence) == 2
