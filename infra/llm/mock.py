@@ -4,7 +4,9 @@ from typing import TypeVar
 
 from pydantic import BaseModel
 
-from domain.models.prediction import Direction, PredictionDraft
+from domain.models.evaluation import EvaluationDraft
+from domain.models.event import EventDecomposition
+from domain.models.prediction import Direction, PredictionChange, PredictionComparison, PredictionDraft
 from domain.models.routing import RouterAction, RouterDecision, ThesisUpdateDraft
 from domain.models.thesis import ThesisDraft, ThesisStatus
 
@@ -107,6 +109,39 @@ class MockLLMClient:
                     "resolution_criteria": ["Compare closing price at horizon end with baseline."],
                     "reasoning": "Mock prediction for contract and integration testing.",
                 }
+            )
+        if response_model is EventDecomposition:
+            return response_model.model_validate(
+                {"events": [{"title": context.get("title") or "Event", "content": context.get("content") or "Event"}]}
+            )
+        if response_model is PredictionComparison:
+            old, new = context.get("old_prediction", {}), context.get("new_prediction", {})
+            fields = ("direction", "expected_change_pct", "horizon_end", "predicted_drivers")
+            changed = [name for name in fields if old.get(name) != new.get(name)]
+            return PredictionComparison(
+                change=PredictionChange.MAJOR_CHANGE if changed else PredictionChange.NO_CHANGE,
+                changed_fields=changed,
+                explanation="Mock comparison of direction, magnitude, horizon and drivers.",
+            )
+        if response_model is EvaluationDraft:
+            prediction, reality = context.get("prediction", {}), context.get("reality", {})
+            if prediction.get("direction") == reality.get("actual_direction"):
+                direction = 1.0
+            elif "FLAT" in (prediction.get("direction"), reality.get("actual_direction")):
+                direction = 0.5
+            else:
+                direction = 0.0
+            gap = abs(prediction.get("expected_change_pct", 0.0) - context.get("actual_change_pct", 0.0))
+            predicted = {item.lower() for item in prediction.get("predicted_drivers", [])}
+            actual = {item.lower() for item in reality.get("actual_drivers", [])}
+            reason = None
+            if actual:
+                reason = 1.0 if actual <= predicted else 0.5 if actual & predicted else 0.0
+            return EvaluationDraft(
+                direction_score=direction,
+                magnitude_score=1.0 if gap <= 0.02 else 0.5 if gap <= 0.05 else 0.0,
+                reason_score=reason,
+                explanation="Mock rubric: direction, magnitude and driver overlap.",
             )
         raise ValueError(f"MockLLMClient has no fixture for {response_model.__name__}")
 

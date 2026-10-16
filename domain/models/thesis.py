@@ -39,10 +39,16 @@ class Thesis(BaseModel):
 class ThesisDraft(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    ticker: str = Field(min_length=1)
-    core_claim: str = Field(min_length=1)
-    core_assumptions: list[str] = Field(min_length=1)
-    initial_strength: float = Field(ge=0.0, le=1.0)
-    evidence_points: list[str] = Field(min_length=1)
-    counter_evidence_points: list[str] = Field(min_length=1)
-    reasoning: str = Field(min_length=1)
+    ticker: str = Field(min_length=1, description="Primary stock ticker the thesis is about")
+    core_claim: str = Field(min_length=1, description="Concise fundamental claim; immutable once created")
+    core_assumptions: list[str] = Field(
+        min_length=1, description="2-3 falsifiable conditions; if one breaks, the thesis is killed"
+    )
+    initial_strength: float = Field(
+        ge=0.0, le=1.0, description="How strongly the current evidence supports the thesis (0.50-0.85)"
+    )
+    evidence_points: list[str] = Field(min_length=1, description="Facts from the event that support the thesis")
+    counter_evidence_points: list[str] = Field(
+        min_length=1, description="Risks or counter-arguments; at least one is required"
+    )
+    reasoning: str = Field(min_length=1, description="Why the event's surprise matters for long-term business drivers")

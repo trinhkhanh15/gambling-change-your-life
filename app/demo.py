@@ -55,7 +55,7 @@ def main() -> int:
         reasoning="Synthetic outcome used only to verify the evaluation contract.",
         actual_drivers=result.prediction.predicted_drivers,
     )
-    evaluation = EvaluationLayer(repository).evaluate(result.prediction, reality)
+    evaluation = EvaluationLayer(llm, repository).evaluate(result.prediction, reality)
     print(f"Evaluation {evaluation.id}: matching_score={evaluation.matching_score:.2f}; result persisted to {args.data_dir}")
     return 0
 

@@ -62,7 +62,7 @@ def test_news_csv_resolves_prices_and_feedback_reaches_next_analysis(tmp_path):
         prediction=PredictionLayer(llm, repository),
         repository=repository,
         outcome_resolver=StockPriceOutcomeResolver(prices_path, tickers_path),
-        evaluation=EvaluationLayer(repository),
+        evaluation=EvaluationLayer(llm, repository),
     )
 
     results = pipeline.run("", limit=3)

@@ -12,6 +12,7 @@ from domain.models.routing import RouterDecision, RouterAction
 from domain.models.thesis import Thesis, ThesisStatus
 from service.pipelines.layers.analysis_layer import AnalysisLayer
 from service.pipelines.layers.evaluation_layer import EvaluationLayer
+from service.pipelines.layers.event_layer import EventLayer
 from service.pipelines.layers.prediction_layer import PredictionLayer
 from infra.sources.stock_prices import StockPriceOutcomeResolver
 
@@ -36,7 +37,9 @@ class MarketHypothesisPipeline:
         repository: Repository,
         outcome_resolver: StockPriceOutcomeResolver | None = None,
         evaluation: EvaluationLayer | None = None,
+        event_layer: EventLayer | None = None,
     ):
+        self._event_layer = event_layer
         self._source = source
         self._analysis = analysis
         self._prediction = prediction
@@ -71,48 +74,46 @@ class MarketHypothesisPipeline:
                 if start_date <= self._utc_date(event.published_at) <= end_date
             ]
 
-        def emit(result: PipelineResult) -> None:
-            results.append(result)
-            if on_result is not None:
-                on_result(len(results), len(events), result)
-
-        for event in events:
-            self._resolve_due(event.published_at.date(), include_same_day=False)
-            self._repository.save(event)
-            decision, thesis = self._analysis.process_event(event)
-            prediction = None
-            if decision.action == RouterAction.UPDATE_THESIS and thesis is not None and thesis.status == ThesisStatus.KILLED:
-                self._prediction.invalidate_for_thesis(thesis.id)
-            elif thesis is not None:
-                active_predictions = [
-                    item
-                    for item in self._repository.list(Prediction)
-                    if item.thesis_id == thesis.id and item.status == PredictionStatus.ACTIVE
-                ]
-                if self._outcome_resolver is not None and active_predictions:
-                    # Keep the original forecast alive until its market horizon resolves.
-                    prediction = max(active_predictions, key=lambda item: item.version)
-                    emit(PipelineResult(event, decision, thesis, prediction))
-                    continue
-                market_context = None
-                if self._outcome_resolver is not None:
-                    context = self._outcome_resolver.forecast_context(
-                        thesis.ticker,
-                        event.published_at,
-                    )
-                    if context is None:
-                        emit(PipelineResult(event, decision, thesis, None))
-                        continue
-                    market_context = context.prediction_fields()
-                prediction = self._prediction.generate(
-                    thesis,
-                    market_context=market_context,
-                    information_cutoff=event.published_at,
-                )
-            emit(PipelineResult(event, decision, thesis, prediction))
+        for index, source_event in enumerate(events, start=1):
+            parts = self._event_layer.decompose(source_event) if self._event_layer else [source_event]
+            for event in parts:
+                result = self._process_event(event)
+                results.append(result)
+                if on_result is not None:
+                    on_result(index, len(events), result)
         if self._outcome_resolver is not None and self._outcome_resolver.latest_date is not None:
             self._resolve_due(self._outcome_resolver.latest_date, include_same_day=True)
         return results
+
+    def _process_event(self, event: Event) -> PipelineResult:
+        self._resolve_due(event.published_at.date(), include_same_day=False)
+        self._repository.save(event)
+        decision, thesis = self._analysis.process_event(event)
+        prediction = None
+        if decision.action == RouterAction.UPDATE_THESIS and thesis is not None and thesis.status == ThesisStatus.KILLED:
+            self._prediction.invalidate_for_thesis(thesis.id)
+        elif thesis is not None:
+            active_predictions = [
+                item
+                for item in self._repository.list(Prediction)
+                if item.thesis_id == thesis.id and item.status == PredictionStatus.ACTIVE
+            ]
+            if self._outcome_resolver is not None and active_predictions:
+                # Keep the original forecast alive until its market horizon resolves.
+                prediction = max(active_predictions, key=lambda item: item.version)
+                return PipelineResult(event, decision, thesis, prediction)
+            market_context = None
+            if self._outcome_resolver is not None:
+                context = self._outcome_resolver.forecast_context(thesis.ticker, event.published_at)
+                if context is None:
+                    return PipelineResult(event, decision, thesis, None)
+                market_context = context.prediction_fields()
+            prediction = self._prediction.generate(
+                thesis,
+                market_context=market_context,
+                information_cutoff=event.published_at,
+            )
+        return PipelineResult(event, decision, thesis, prediction)
 
     @staticmethod
     def _utc_date(value: datetime) -> date:

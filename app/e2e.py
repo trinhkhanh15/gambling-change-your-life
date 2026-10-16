@@ -24,6 +24,7 @@ from infra.sources.stock_prices import StockPriceOutcomeResolver
 from infra.storage.json_repository import JsonRepository
 from service.pipelines.layers.analysis_layer import AnalysisLayer
 from service.pipelines.layers.evaluation_layer import EvaluationLayer
+from service.pipelines.layers.event_layer import EventLayer
 from service.pipelines.layers.prediction_layer import PredictionLayer
 from service.pipelines.pipeline import MarketHypothesisPipeline, PipelineResult
 
@@ -51,6 +52,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Last event date to include (UTC)",
     )
     parser.add_argument("--data-dir", type=Path, default=Path("data_storage/e2e"))
+    parser.add_argument(
+        "--no-decompose",
+        action="store_true",
+        help="Skip the per-event LLM call that splits multi-topic news into atomic events",
+    )
     parser.add_argument("--openai", action="store_true", help="Use OpenAI instead of the deterministic mock")
     parser.add_argument(
         "--model",
@@ -101,7 +107,8 @@ def main(argv: list[str] | None = None) -> int:
         prediction=PredictionLayer(llm, repository),
         repository=repository,
         outcome_resolver=outcomes,
-        evaluation=EvaluationLayer(repository),
+        evaluation=EvaluationLayer(llm, repository),
+        event_layer=None if args.no_decompose else EventLayer(llm),
     )
 
     progress_state: dict = {"in": 0, "out": 0}

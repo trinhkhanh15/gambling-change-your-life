@@ -46,3 +46,21 @@ class Evidence(BaseModel):
     event_id: str = Field(min_length=1)
     timestamp: datetime
     point: str = Field(min_length=1)
+
+
+class DecomposedEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    title: str = Field(min_length=1, description="Concise summary of this discrete event")
+    content: str = Field(min_length=1, description="Specific detail relevant to this event")
+    companies_mentioned: list[str] = Field(default_factory=list, description="Tickers of the companies concerned")
+    sectors: list[str] = Field(default_factory=list)
+    nature: EventNature = EventNature.FACT
+    scope: EventScope = EventScope.COMPANY
+    expectation_context: ExpectationContext | None = None
+
+
+class EventDecomposition(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    events: list[DecomposedEvent] = Field(min_length=1)

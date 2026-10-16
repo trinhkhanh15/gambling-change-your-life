@@ -1,11 +1,17 @@
-import json
 from datetime import datetime, timezone
 from uuid import uuid4
 
 from application.ports.llm import LLMClient
 from application.ports.repository import Repository
-from domain.models.prediction import Prediction, PredictionDraft, PredictionStatus
+from domain.models.prediction import (
+    Prediction,
+    PredictionChange,
+    PredictionComparison,
+    PredictionDraft,
+    PredictionStatus,
+)
 from domain.models.thesis import Thesis, ThesisStatus
+from domain.prompts import render_prompt
 
 
 class PredictionLayer:
@@ -27,12 +33,12 @@ class PredictionLayer:
         if len(active) > 1:
             raise ValueError(f"thesis {thesis.id} has multiple active predictions")
 
-        prompt = (
-            "Create a measurable prediction from this thesis. "
-            "CRITICAL requirement for 'expected_change_pct': must be a decimal fraction (e.g. 0.03 for +3% or -0.05 for -5%), "
-            "do NOT provide whole numbers like 3.0 or 5.0.\n"
-            "CONTEXT_JSON\n"
-            + json.dumps({"thesis": thesis.model_dump(mode="json")}, ensure_ascii=False)
+        prompt = render_prompt(
+            "prediction",
+            {
+                "thesis": thesis.model_dump(mode="json"),
+                "existing_prediction": active[0].model_dump(mode="json") if active else None,
+            },
         )
         draft = PredictionDraft.model_validate(
             self._llm.generate_response(system_prompt=prompt, response_model=PredictionDraft)
@@ -43,10 +49,6 @@ class PredictionLayer:
         if market_context:
             draft_fields.update(market_context)
         version = max((p.version for p in history), default=0) + 1
-        if active:
-            old = active[0].model_copy(update={"status": PredictionStatus.SUPERSEDED})
-            self._repository.save(old)
-
         prediction = Prediction(
             id=f"prediction-{uuid4().hex[:12]}",
             thesis_id=thesis.id,
@@ -54,7 +56,21 @@ class PredictionLayer:
             **draft_fields,
             information_cutoff=information_cutoff or datetime.now(timezone.utc),
         )
+        if active:
+            if not self._is_major_change(active[0], prediction):
+                return active[0]  # same prediction in different words: keep the current version
+            self._repository.save(active[0].model_copy(update={"status": PredictionStatus.SUPERSEDED}))
         return self._repository.save(prediction)
+
+    def _is_major_change(self, old: Prediction, new: Prediction) -> bool:
+        prompt = render_prompt(
+            "compare_prediction",
+            {"old_prediction": old.model_dump(mode="json"), "new_prediction": new.model_dump(mode="json")},
+        )
+        comparison = PredictionComparison.model_validate(
+            self._llm.generate_response(system_prompt=prompt, response_model=PredictionComparison)
+        )
+        return comparison.change == PredictionChange.MAJOR_CHANGE
 
     def invalidate_for_thesis(self, thesis_id: str) -> list[Prediction]:
         invalidated = []

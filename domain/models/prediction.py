@@ -54,14 +54,30 @@ class Prediction(BaseModel):
 class PredictionDraft(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    target: str = Field(min_length=1)
-    metrics: list[str] = Field(min_length=1)
+    target: str = Field(min_length=1, description="Observable target, e.g. the stock ticker")
+    metrics: list[str] = Field(min_length=1, description="Observable metrics, e.g. price_return")
     direction: Direction
     horizon_start: date
     horizon_end: date
-    baseline: float
-    expected_change_pct: float
-    predicted_drivers: list[str] = Field(min_length=1)
+    baseline: float = Field(description="Reference value at horizon_start")
+    expected_change_pct: float = Field(
+        description="Decimal fraction (0.03 = +3%, -0.05 = -5%); positive for UP, negative for DOWN, 0 for FLAT"
+    )
+    predicted_drivers: list[str] = Field(min_length=1, description="Main causal drivers behind the prediction")
     confidence: float = Field(ge=0.0, le=1.0)
-    resolution_criteria: list[str] = Field(min_length=1)
-    reasoning: str = Field(min_length=1)
+    resolution_criteria: list[str] = Field(min_length=1, description="Objective, observable resolution rules")
+    reasoning: str = Field(min_length=1, description="Causal reasoning; what is new relative to market expectations")
+
+
+class PredictionChange(str, Enum):
+    NO_CHANGE = "no_change"
+    MINOR_CHANGE = "minor_change"
+    MAJOR_CHANGE = "major_change"
+
+
+class PredictionComparison(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    change: PredictionChange = Field(description="Only major_change creates a new prediction version")
+    changed_fields: list[str] = Field(default_factory=list, description="Fields that materially changed")
+    explanation: str = Field(min_length=1, description="Why the change is or is not material")

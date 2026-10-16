@@ -1,4 +1,4 @@
-import json
+import re
 from uuid import uuid4
 
 from application.ports.llm import LLMClient
@@ -9,6 +9,9 @@ from domain.models.prediction import Prediction
 from domain.models.reality import Reality
 from domain.models.routing import RouterAction, RouterDecision, ThesisUpdateDraft
 from domain.models.thesis import Thesis, ThesisDraft, ThesisStatus
+from domain.prompts import render_prompt
+
+_WORD = re.compile(r"[a-z]{4,}")
 
 
 class AnalysisLayer:
@@ -17,7 +20,9 @@ class AnalysisLayer:
         llm: LLMClient,
         repository: Repository,
         valid_tickers: list[str] | None = None,
+        top_k: int = 5,
     ):
+        self._top_k = top_k
         self._llm = llm
         self._repository = repository
         self._valid_tickers = valid_tickers or []
@@ -30,15 +35,10 @@ class AnalysisLayer:
                 + ", ".join(self._valid_tickers)
                 + ". If the event affects an industry or macro theme, choose the single company from this list that is most directly impacted. Do NOT use index tickers, ETFs (e.g. XLU, SPY, QQQ), or any ticker not in this list."
             )
-        prompt = (
-            f"Generate a falsifiable business thesis from this event.{ticker_constraint}\nCONTEXT_JSON\n"
-            + json.dumps(
-                {
-                    "event": event.model_dump(mode="json"),
-                    "recent_resolved_feedback": recent_feedback or [],
-                },
-                ensure_ascii=False,
-            )
+        prompt = render_prompt(
+            "generate_thesis",
+            {"event": event.model_dump(mode="json"), "recent_resolved_feedback": recent_feedback or []},
+            extra=ticker_constraint,
         )
         draft = ThesisDraft.model_validate(
             self._llm.generate_response(system_prompt=prompt, response_model=ThesisDraft)
@@ -66,13 +66,23 @@ class AnalysisLayer:
             thesis for thesis in self._repository.list(Thesis)
             if thesis.status == ThesisStatus.ACTIVE
         ]
-        prompt = "Route this event against active theses.\nCONTEXT_JSON\n" + json.dumps(
+        candidates = self._top_candidates(event, active_theses)
+        prompt = render_prompt(
+            "router",
             {
                 "event": event.model_dump(mode="json"),
-                "candidate_theses": [thesis.model_dump(mode="json") for thesis in active_theses],
+                "candidate_theses": [
+                    {
+                        "id": thesis.id,
+                        "ticker": thesis.ticker,
+                        "core_claim": thesis.core_claim,
+                        "core_assumptions": thesis.core_assumptions,
+                        "strength": thesis.strength,
+                    }
+                    for thesis in candidates
+                ],
                 "recent_resolved_feedback": recent_feedback,
             },
-            ensure_ascii=False,
         )
         decision = RouterDecision.model_validate(
             self._llm.generate_response(system_prompt=prompt, response_model=RouterDecision)
@@ -85,13 +95,13 @@ class AnalysisLayer:
         target = next((item for item in active_theses if item.id == decision.target_thesis_id), None)
         if target is None:
             raise ValueError(f"router selected unknown or inactive thesis: {decision.target_thesis_id}")
-        update_prompt = "Update thesis evidence and decide whether to kill it.\nCONTEXT_JSON\n" + json.dumps(
+        update_prompt = render_prompt(
+            "update_kill_thesis",
             {
                 "event": event.model_dump(mode="json"),
                 "thesis": target.model_dump(mode="json"),
                 "recent_resolved_feedback": recent_feedback,
             },
-            ensure_ascii=False,
         )
         draft = ThesisUpdateDraft.model_validate(
             self._llm.generate_response(system_prompt=update_prompt, response_model=ThesisUpdateDraft)
@@ -119,6 +129,19 @@ class AnalysisLayer:
         )
         updated = Thesis.model_validate(updated_data)
         return decision, self._repository.save(updated)
+
+    def _top_candidates(self, event: Event, active_theses: list[Thesis]) -> list[Thesis]:
+        """Top-K active theses sharing a ticker with the event or >=3 content words with its text."""
+        tickers = {company.upper() for company in event.companies_mentioned}
+        words = set(_WORD.findall(f"{event.title} {event.content}".lower()))
+        scored = []
+        for thesis in active_theses:
+            by_ticker = thesis.ticker.upper() in tickers
+            overlap = len(words & set(_WORD.findall(thesis.core_claim.lower())))
+            if by_ticker or overlap >= 3:
+                scored.append((by_ticker, overlap, thesis))
+        scored.sort(key=lambda item: item[:2], reverse=True)
+        return [thesis for _, _, thesis in scored[: self._top_k]]
 
     def _recent_feedback(self, *, as_of, limit: int = 5) -> list[dict]:
         evaluations = self._repository.list(Evaluation)

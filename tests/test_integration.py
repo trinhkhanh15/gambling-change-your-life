@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from domain.models.event import Event
-from domain.models.prediction import Direction, Prediction, PredictionStatus
+from domain.models.prediction import Direction, Prediction, PredictionDraft, PredictionStatus
 from domain.models.routing import RouterAction
 from domain.models.reality import Reality
 from infra.llm.mock import MockLLMClient
@@ -11,6 +11,20 @@ from service.pipelines.layers.analysis_layer import AnalysisLayer
 from service.pipelines.layers.evaluation_layer import EvaluationLayer
 from service.pipelines.layers.prediction_layer import PredictionLayer
 from service.pipelines.pipeline import MarketHypothesisPipeline
+
+
+class ShiftingPredictionLLM(MockLLMClient):
+    """Mock whose later predictions expect a bigger move, so the comparison reports a major change."""
+
+    def __init__(self):
+        self.predictions = 0
+
+    def generate_response(self, *, system_prompt: str, response_model):
+        response = super().generate_response(system_prompt=system_prompt, response_model=response_model)
+        if response_model is PredictionDraft:
+            self.predictions += 1
+            return response.model_copy(update={"expected_change_pct": 0.05 * self.predictions})
+        return response
 
 
 def test_source_to_evaluation_flow_persists_records(tmp_path):
@@ -49,7 +63,7 @@ def test_source_to_evaluation_flow_persists_records(tmp_path):
         reasoning="The observed price increased over the horizon.",
         actual_drivers=["demand", "guidance"],
     )
-    evaluation = EvaluationLayer(repository).evaluate(result.prediction, reality)
+    evaluation = EvaluationLayer(llm, repository).evaluate(result.prediction, reality)
 
     assert evaluation.direction_score == 1.0
     assert evaluation.magnitude_score == 1.0
@@ -89,7 +103,7 @@ def test_tavily_adapter_normalizes_search_results():
 
 def test_event_routing_update_kill_and_ignore_flow(tmp_path):
     repository = JsonRepository(tmp_path / "records.json")
-    llm = MockLLMClient()
+    llm = ShiftingPredictionLLM()
     events = [
         Event(
             id="evt-1", source="fixture", title="ACME raises guidance",
@@ -130,11 +144,9 @@ def test_event_routing_update_kill_and_ignore_flow(tmp_path):
     assert ignored.thesis is None and ignored.prediction is None
 
 
-def test_prediction_updates_keep_version_history(tmp_path):
+def _active_thesis(repository):
     from domain.models.thesis import Thesis
 
-    repository = JsonRepository(tmp_path / "records.json")
-    llm = MockLLMClient()
     thesis = Thesis(
         id="thesis-1",
         ticker="ACME",
@@ -144,7 +156,13 @@ def test_prediction_updates_keep_version_history(tmp_path):
         reasoning="The event supports the claim.",
     )
     repository.save(thesis)
-    layer = PredictionLayer(llm, repository)
+    return thesis
+
+
+def test_major_prediction_change_creates_new_version(tmp_path):
+    repository = JsonRepository(tmp_path / "records.json")
+    thesis = _active_thesis(repository)
+    layer = PredictionLayer(ShiftingPredictionLLM(), repository)
 
     first = layer.generate(thesis)
     second = layer.generate(thesis)
@@ -153,3 +171,78 @@ def test_prediction_updates_keep_version_history(tmp_path):
     assert second.version == 2
     assert repository.get(Prediction, first.id).status == PredictionStatus.SUPERSEDED
     assert len(repository.list(Prediction)) == 2
+
+
+def test_unchanged_prediction_keeps_current_version(tmp_path):
+    repository = JsonRepository(tmp_path / "records.json")
+    thesis = _active_thesis(repository)
+    layer = PredictionLayer(MockLLMClient(), repository)
+
+    first = layer.generate(thesis)
+    second = layer.generate(thesis)
+
+    assert second.id == first.id
+    assert repository.get(Prediction, first.id).status == PredictionStatus.ACTIVE
+    assert len(repository.list(Prediction)) == 1
+
+
+def test_router_only_sees_top_k_related_theses(tmp_path):
+    from domain.models.thesis import Thesis
+
+    repository = JsonRepository(tmp_path / "records.json")
+    for ticker in ("AAA", "BBB", "CCC"):
+        repository.save(
+            Thesis(id=f"thesis-{ticker}", ticker=ticker, core_claim="Unrelated claim.",
+                   core_assumptions=["x"], strength=0.5, reasoning="r")
+        )
+    layer = AnalysisLayer(MockLLMClient(), repository, top_k=2)
+    event = Event(id="e", source="s", title="BBB news", content="BBB and CCC announce results",
+                  companies_mentioned=["BBB", "CCC"])
+
+    candidates = layer._top_candidates(event, repository.list(Thesis))
+
+    assert [thesis.ticker for thesis in candidates] == ["BBB", "CCC"]
+
+
+def test_event_layer_splits_multi_topic_news_and_keeps_single_events(tmp_path):
+    from domain.models.event import DecomposedEvent, EventDecomposition
+    from service.pipelines.layers.event_layer import EventLayer
+
+    class SplittingLLM(MockLLMClient):
+        def generate_response(self, *, system_prompt, response_model):
+            if response_model is EventDecomposition:
+                return EventDecomposition(events=[
+                    DecomposedEvent(title="A beats", content="A beat EPS", companies_mentioned=["AAA", "ZZZ"]),
+                    DecomposedEvent(title="B cuts", content="B cut guidance", companies_mentioned=["BBB"]),
+                ])
+            return super().generate_response(system_prompt=system_prompt, response_model=response_model)
+
+    event = Event(id="e1", source="s", title="Two stories", content="A and B", companies_mentioned=["AAA", "BBB"])
+
+    parts = EventLayer(SplittingLLM()).decompose(event)
+    assert [part.id for part in parts] == ["e1#1", "e1#2"]
+    assert parts[0].companies_mentioned == ["AAA"]  # ZZZ was not detected in the article
+    assert EventLayer(MockLLMClient()).decompose(event) == [event]
+
+
+def test_reason_score_is_not_assessed_without_actual_drivers(tmp_path):
+    from domain.models.evaluation import EvaluationDraft
+
+    class OverconfidentLLM(MockLLMClient):
+        def generate_response(self, *, system_prompt, response_model):
+            if response_model is EvaluationDraft:
+                return EvaluationDraft(direction_score=1.0, magnitude_score=1.0, reason_score=1.0, explanation="ok")
+            return super().generate_response(system_prompt=system_prompt, response_model=response_model)
+
+    repository = JsonRepository(tmp_path / "records.json")
+    prediction = PredictionLayer(MockLLMClient(), repository).generate(_active_thesis(repository))
+    reality = Reality(
+        id="reality-1", prediction_id=prediction.id, target=prediction.target, metric=prediction.metrics[0],
+        baseline=prediction.baseline, actual_value=105.0, actual_direction=Direction.UP,
+        observed_at=datetime(2030, 1, 1, tzinfo=timezone.utc), source="fixture", reasoning="Price rose.",
+    )
+
+    evaluation = EvaluationLayer(OverconfidentLLM(), repository).evaluate(prediction, reality)
+
+    assert evaluation.reason_score is None
+    assert evaluation.matching_score == 1.0
