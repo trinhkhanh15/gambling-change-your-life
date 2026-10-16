@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import json
 import os
 import sys
 from collections import Counter
@@ -16,6 +15,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from domain.models.evaluation import Evaluation
+from domain.models.llm_run import LLMRun
 from domain.models.prediction import Prediction
 from domain.models.reality import Reality
 from infra.llm.mock import MockLLMClient
@@ -55,8 +55,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--model",
         type=str,
-        default="gpt-6-luna",
-        help="OpenAI model to use (default: gpt-6-luna)",
+        default=os.getenv("OPENAI_MODEL", "gpt-6-luna"),
+        help="OpenAI model to use (default: $OPENAI_MODEL, else gpt-6-luna)",
     )
     return parser
 
@@ -159,11 +159,11 @@ def main(argv: list[str] | None = None) -> int:
         storage_path=repository.path,
     )
     if args.openai:
-        _record_llm_cost(llm, args)
+        _record_llm_cost(llm, args, repository)
     return 0 if run_prediction_ids and linked_evaluations else 2
 
 
-def _record_llm_cost(llm, args: argparse.Namespace) -> None:
+def _record_llm_cost(llm, args: argparse.Namespace, repository: JsonRepository) -> None:
     # Prices are USD per 1M tokens; cached-input discounts are not modelled.
     try:
         in_price = float(os.environ["OPENAI_INPUT_COST_PER_1M"])
@@ -171,27 +171,24 @@ def _record_llm_cost(llm, args: argparse.Namespace) -> None:
         cost = (llm.input_tokens * in_price + llm.output_tokens * out_price) / 1_000_000
     except (KeyError, ValueError):
         cost = None
-    entry = {
-        "run_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "model": llm.model_name,
-        "start_date": args.start_date.isoformat(),
-        "end_date": args.end_date.isoformat(),
-        "llm_calls": llm.calls,
-        "input_tokens": llm.input_tokens,
-        "output_tokens": llm.output_tokens,
-        "cost_usd": cost,
-    }
-    log_path = args.data_dir / "cost_log.jsonl"
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    with log_path.open("a", encoding="utf-8") as stream:
-        stream.write(json.dumps(entry) + "\n")
+    run = LLMRun(
+        id=f"llm-run-{datetime.now(timezone.utc):%Y%m%dT%H%M%S%f}",
+        model=llm.model_name,
+        start_date=args.start_date,
+        end_date=args.end_date,
+        llm_calls=llm.calls,
+        input_tokens=llm.input_tokens,
+        output_tokens=llm.output_tokens,
+        cost_usd=cost,
+    )
+    repository.save(run)
     print("\nLLM COST")
     print(f"  calls / input / output tokens:    {llm.calls} / {llm.input_tokens} / {llm.output_tokens}")
     if cost is None:
         print("  cost:                             n/a (set OPENAI_INPUT_COST_PER_1M and OPENAI_OUTPUT_COST_PER_1M in .env)")
     else:
         print(f"  cost:                             ${cost:.4f}")
-    print(f"  cost log:                         {log_path}")
+    print(f"  saved to:                         {repository.path} (LLMRun {run.id})")
 
 
 def _parse_date(value: str) -> date:
