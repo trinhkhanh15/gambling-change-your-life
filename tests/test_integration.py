@@ -269,3 +269,44 @@ def test_router_id_with_a_mistyped_tail_is_repaired_to_the_candidate(tmp_path):
 
     assert decision.target_thesis_id == thesis.id
     assert updated.id == thesis.id and len(updated.evidence) == 2
+
+
+def test_resume_skips_events_saved_before_a_crash(tmp_path):
+    import pytest
+
+    from domain.models.routing import RouterDecision
+    from domain.models.thesis import Thesis
+
+    class FlakyRouterLLM(MockLLMClient):
+        fail = True
+
+        def generate_response(self, *, system_prompt, response_model):
+            if self.fail and response_model is RouterDecision and "BOOM" in system_prompt:
+                raise RuntimeError("provider outage")
+            return super().generate_response(system_prompt=system_prompt, response_model=response_model)
+
+    events = [
+        Event(id=f"e{i}", source="s", title=f"{name} news", content=f"{name} demand",
+              companies_mentioned=[name], published_at=datetime(2026, 1, i, tzinfo=timezone.utc))
+        for i, name in ((1, "AAA"), (2, "BOOM"), (3, "CCC"))
+    ]
+    repository = JsonRepository(tmp_path / "records.json")
+    llm = FlakyRouterLLM()
+
+    def build():
+        return MarketHypothesisPipeline(
+            source=InMemorySourceAdapter(events),
+            analysis=AnalysisLayer(llm, repository),
+            prediction=PredictionLayer(llm, repository),
+            repository=repository,
+        )
+
+    with pytest.raises(RuntimeError):
+        build().run("", limit=None)
+    assert [event.id for event in repository.list(Event)] == ["e1"]  # the crashed event is not marked done
+
+    llm.fail = False
+    resumed = build().run("", limit=None, skip_processed=True)
+
+    assert [result.event.id for result in resumed] == ["e2", "e3"]
+    assert len(repository.list(Thesis)) == 3  # no duplicate thesis for e1

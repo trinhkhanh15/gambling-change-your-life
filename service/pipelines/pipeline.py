@@ -57,6 +57,7 @@ class MarketHypothesisPipeline:
         start_date: date | None = None,
         end_date: date | None = None,
         on_result: Callable[[int, int, PipelineResult], None] | None = None,
+        skip_processed: bool = False,
     ) -> list[PipelineResult]:
         if (start_date is None) != (end_date is None):
             raise ValueError("start_date and end_date must be provided together")
@@ -74,10 +75,16 @@ class MarketHypothesisPipeline:
                 if start_date <= self._utc_date(event.published_at) <= end_date
             ]
 
+        # shortcut: an event counts as done once any of its parts was saved; a crash between two parts
+        # of one split news item skips the rest of it on resume. Upgrade to a per-event done marker if it bites.
+        done = {item.id.split("#")[0] for item in self._repository.list(Event)} if skip_processed else set()
         for index, source_event in enumerate(events, start=1):
+            if source_event.id in done:
+                continue
             parts = self._event_layer.decompose(source_event) if self._event_layer else [source_event]
             for event in parts:
                 result = self._process_event(event)
+                self._repository.save(event)  # saved only once fully processed: this is the resume marker
                 results.append(result)
                 if on_result is not None:
                     on_result(index, len(events), result)
@@ -87,7 +94,6 @@ class MarketHypothesisPipeline:
 
     def _process_event(self, event: Event) -> PipelineResult:
         self._resolve_due(event.published_at.date(), include_same_day=False)
-        self._repository.save(event)
         decision, thesis = self._analysis.process_event(event)
         prediction = None
         if decision.action == RouterAction.UPDATE_THESIS and thesis is not None and thesis.status == ThesisStatus.KILLED:

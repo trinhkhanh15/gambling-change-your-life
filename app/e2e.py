@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from domain.models.evaluation import Evaluation
+from domain.models.event import Event
 from domain.models.llm_run import LLMRun
 from domain.models.prediction import Prediction
 from domain.models.reality import Reality
@@ -52,6 +53,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Last event date to include (UTC)",
     )
     parser.add_argument("--data-dir", type=Path, default=Path("data_storage/e2e"))
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Skip events already processed in --data-dir (continue a failed run) instead of reprocessing them",
+    )
     parser.add_argument(
         "--no-decompose",
         action="store_true",
@@ -115,12 +121,22 @@ def main(argv: list[str] | None = None) -> int:
     previous_evaluation_ids = {item.id for item in repository.list(Evaluation)}
     previous_prediction_ids = {item.id for item in repository.list(Prediction)}
     _print_run_header(args, llm_label)
+    already_done = len(repository.list(Event))
+    if already_done and args.resume:
+        print(f"Resuming: {already_done} events already processed in {args.data_dir} will be skipped.", flush=True)
+    elif already_done:
+        print(
+            f"WARNING: {already_done} events already exist in {args.data_dir}; they will be processed again "
+            "(duplicate theses). Use --resume to skip them or a new --data-dir.",
+            flush=True,
+        )
     try:
         results = pipeline.run(
             limit=None,
             start_date=args.start_date,
             end_date=args.end_date,
             on_result=lambda done, total, result: _print_progress(done, total, result, llm, progress_state),
+            skip_processed=args.resume,
         )
     except BaseException:
         if args.openai:  # a crashed or interrupted run still spent money
