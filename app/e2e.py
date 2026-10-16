@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import os
 import sys
 from collections import Counter
 
 csv.field_size_limit(sys.maxsize)
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -54,8 +55,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--model",
         type=str,
-        default="gpt-5.6-luna",
-        help="OpenAI model to use (default: gpt-5.6-luna)",
+        default="gpt-6-luna",
+        help="OpenAI model to use (default: gpt-6-luna)",
     )
     return parser
 
@@ -157,7 +158,40 @@ def main(argv: list[str] | None = None) -> int:
         llm_label=llm_label,
         storage_path=repository.path,
     )
+    if args.openai:
+        _record_llm_cost(llm, args)
     return 0 if run_prediction_ids and linked_evaluations else 2
+
+
+def _record_llm_cost(llm, args: argparse.Namespace) -> None:
+    # Prices are USD per 1M tokens; cached-input discounts are not modelled.
+    try:
+        in_price = float(os.environ["OPENAI_INPUT_COST_PER_1M"])
+        out_price = float(os.environ["OPENAI_OUTPUT_COST_PER_1M"])
+        cost = (llm.input_tokens * in_price + llm.output_tokens * out_price) / 1_000_000
+    except (KeyError, ValueError):
+        cost = None
+    entry = {
+        "run_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "model": llm.model_name,
+        "start_date": args.start_date.isoformat(),
+        "end_date": args.end_date.isoformat(),
+        "llm_calls": llm.calls,
+        "input_tokens": llm.input_tokens,
+        "output_tokens": llm.output_tokens,
+        "cost_usd": cost,
+    }
+    log_path = args.data_dir / "cost_log.jsonl"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(entry) + "\n")
+    print("\nLLM COST")
+    print(f"  calls / input / output tokens:    {llm.calls} / {llm.input_tokens} / {llm.output_tokens}")
+    if cost is None:
+        print("  cost:                             n/a (set OPENAI_INPUT_COST_PER_1M and OPENAI_OUTPUT_COST_PER_1M in .env)")
+    else:
+        print(f"  cost:                             ${cost:.4f}")
+    print(f"  cost log:                         {log_path}")
 
 
 def _parse_date(value: str) -> date:
