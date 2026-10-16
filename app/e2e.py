@@ -104,6 +104,7 @@ def main(argv: list[str] | None = None) -> int:
         evaluation=EvaluationLayer(repository),
     )
 
+    progress_state: dict = {"in": 0, "out": 0}
     previous_evaluation_ids = {item.id for item in repository.list(Evaluation)}
     previous_prediction_ids = {item.id for item in repository.list(Prediction)}
     _print_run_header(args, llm_label)
@@ -111,6 +112,7 @@ def main(argv: list[str] | None = None) -> int:
         limit=None,
         start_date=args.start_date,
         end_date=args.end_date,
+        on_result=lambda done, total, result: _print_progress(done, total, result, llm, progress_state),
     )
     predictions = repository.list(Prediction)
     evaluations = repository.list(Evaluation)
@@ -163,14 +165,38 @@ def main(argv: list[str] | None = None) -> int:
     return 0 if run_prediction_ids and linked_evaluations else 2
 
 
-def _record_llm_cost(llm, args: argparse.Namespace, repository: JsonRepository) -> None:
+def _llm_cost(llm) -> float | None:
     # Prices are USD per 1M tokens; cached-input discounts are not modelled.
     try:
         in_price = float(os.environ["OPENAI_INPUT_COST_PER_1M"])
         out_price = float(os.environ["OPENAI_OUTPUT_COST_PER_1M"])
-        cost = (llm.input_tokens * in_price + llm.output_tokens * out_price) / 1_000_000
+        return (llm.input_tokens * in_price + llm.output_tokens * out_price) / 1_000_000
     except (KeyError, ValueError):
-        cost = None
+        return None
+
+
+def _print_progress(done: int, total: int, result: PipelineResult, llm, state: dict) -> None:
+    ticker = result.thesis.ticker if result.thesis else "-"
+    line = (
+        f"[{done}/{total}] {result.event.published_at:%Y-%m-%d} "
+        f"{result.decision.action.value:<13} {ticker:<6} "
+        f"pred={'yes' if result.prediction else 'no '}"
+    )
+    if hasattr(llm, "input_tokens"):
+        d_in, d_out = llm.input_tokens - state["in"], llm.output_tokens - state["out"]
+        state["in"], state["out"] = llm.input_tokens, llm.output_tokens
+        line += f" | this event: tokens={d_in}/{d_out}"
+        total_cost = _llm_cost(llm)
+        if total_cost is not None:
+            in_price, out_price = float(os.environ["OPENAI_INPUT_COST_PER_1M"]), float(os.environ["OPENAI_OUTPUT_COST_PER_1M"])
+            line += f" cost=${(d_in * in_price + d_out * out_price) / 1_000_000:.4f}"
+        line += f" | total: calls={llm.calls} tokens={llm.input_tokens}/{llm.output_tokens}"
+        line += f" cost=${total_cost:.4f}" if total_cost is not None else ""
+    print(f"{line} | {result.event.title[:60]}", flush=True)
+
+
+def _record_llm_cost(llm, args: argparse.Namespace, repository: JsonRepository) -> None:
+    cost = _llm_cost(llm)
     run = LLMRun(
         id=f"llm-run-{datetime.now(timezone.utc):%Y%m%dT%H%M%S%f}",
         model=llm.model_name,

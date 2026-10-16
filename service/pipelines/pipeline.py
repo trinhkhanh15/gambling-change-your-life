@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 
@@ -52,6 +53,7 @@ class MarketHypothesisPipeline:
         limit: int | None = 10,
         start_date: date | None = None,
         end_date: date | None = None,
+        on_result: Callable[[int, int, PipelineResult], None] | None = None,
     ) -> list[PipelineResult]:
         if (start_date is None) != (end_date is None):
             raise ValueError("start_date and end_date must be provided together")
@@ -68,6 +70,12 @@ class MarketHypothesisPipeline:
                 for event in events
                 if start_date <= self._utc_date(event.published_at) <= end_date
             ]
+
+        def emit(result: PipelineResult) -> None:
+            results.append(result)
+            if on_result is not None:
+                on_result(len(results), len(events), result)
+
         for event in events:
             self._resolve_due(event.published_at.date(), include_same_day=False)
             self._repository.save(event)
@@ -84,7 +92,7 @@ class MarketHypothesisPipeline:
                 if self._outcome_resolver is not None and active_predictions:
                     # Keep the original forecast alive until its market horizon resolves.
                     prediction = max(active_predictions, key=lambda item: item.version)
-                    results.append(PipelineResult(event, decision, thesis, prediction))
+                    emit(PipelineResult(event, decision, thesis, prediction))
                     continue
                 market_context = None
                 if self._outcome_resolver is not None:
@@ -93,7 +101,7 @@ class MarketHypothesisPipeline:
                         event.published_at,
                     )
                     if context is None:
-                        results.append(PipelineResult(event, decision, thesis, None))
+                        emit(PipelineResult(event, decision, thesis, None))
                         continue
                     market_context = context.prediction_fields()
                 prediction = self._prediction.generate(
@@ -101,14 +109,7 @@ class MarketHypothesisPipeline:
                     market_context=market_context,
                     information_cutoff=event.published_at,
                 )
-            results.append(
-                PipelineResult(
-                    event=event,
-                    decision=decision,
-                    thesis=thesis,
-                    prediction=prediction,
-                )
-            )
+            emit(PipelineResult(event, decision, thesis, prediction))
         if self._outcome_resolver is not None and self._outcome_resolver.latest_date is not None:
             self._resolve_due(self._outcome_resolver.latest_date, include_same_day=True)
         return results
