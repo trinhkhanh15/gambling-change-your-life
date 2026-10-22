@@ -38,6 +38,7 @@ class PredictionLayer:
             {
                 "thesis": thesis.model_dump(mode="json"),
                 "existing_prediction": active[0].model_dump(mode="json") if active else None,
+                "market_window": market_context,
             },
         )
         draft = PredictionDraft.model_validate(
@@ -48,6 +49,11 @@ class PredictionLayer:
             draft_fields["expected_change_pct"] = draft_fields["expected_change_pct"] / 100.0
         if market_context:
             draft_fields.update(market_context)
+            # The LLM's own criteria may cite a different horizon than the one graded.
+            draft_fields["resolution_criteria"] = [
+                f"Adjusted close on {market_context['horizon_end']} versus the baseline close "
+                f"on {market_context['horizon_start']}: {market_context['baseline']:.2f}."
+            ]
         version = max((p.version for p in history), default=0) + 1
         prediction = Prediction(
             id=f"prediction-{uuid4().hex[:12]}",
