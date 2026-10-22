@@ -4,8 +4,9 @@ Analyze the following raw financial news item and break it down into discrete, a
 The JSON after CONTEXT_JSON contains the news title, content, source, and known_companies (tickers already detected in the article). Use only tickers from known_companies in companies_mentioned.
 
 Decomposition Criteria:
-1. Distinct Entities: Separate events if they concern different companies.
-2. Horizon & Nature: Separate historical reported facts (past quarters) from forward-looking guidance or market expectations.
-3. Independent Drivers: Separate different business dimensions (e.g., revenue/earnings beat vs regulatory action vs CapEx revision).
+1. Distinct Entities: Separate events ONLY if they concern completely different, unrelated companies.
+2. Horizon & Nature: Separate historical reported facts (past quarters) from forward-looking guidance or market expectations when both are substantial and independent.
+3. Independent Drivers: Separate different business dimensions ONLY when they do not belong to the same core product or strategic announcement.
+4. Do NOT Over-fragment: Do NOT split an article discussing a single company's product, strategy, partnership, or policy topic into multiple fragments. Retain the net holistic catalyst. Return exactly one event if the developments are facets of the same overarching announcement.
 
 For each event set nature ("fact" or "expectation") and scope ("company", "industry" or "macro"). Fill expectation_context (consensus metric, expected value, actual value, BEAT/MISS/IN_LINE) only when the article states an expectation.

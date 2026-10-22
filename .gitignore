@@ -219,3 +219,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+# Temporary datasets & workbench
+.cf-workbench/
+dataset_q1_2025.csv
+dataset_q2_2025.csv
+

@@ -10,12 +10,13 @@ The JSON after CONTEXT_JSON contains:
 ### Routing Guidelines:
 1. IGNORE:
    - The event is PR fluff, corporate philanthropy, executive speaking engagements, marketing announcements, or trivial news with NO material impact on corporate cash flows, margins, competitive moat, or industry dynamics.
+   - The event is broad macroeconomic data, high-level policy debate, or foreign industry news that lacks a direct, quantifiable transmission mechanism to a specific listed company.
 2. UPDATE_THESIS:
    - The event directly confirms, provides new supporting evidence, introduces counter-evidence, or challenges the core assumptions of an existing thesis in candidate_theses.
    - You MUST set target_thesis_id to the id of that candidate.
 3. GENERATE_THESIS:
-   - The event introduces a material financial development (e.g., significant earnings beat/miss, major guidance revision, structural CapEx shift, breakthrough product launch) that warrants a NEW market hypothesis not yet tracked by candidate_theses.
+   - The event introduces a material financial development (e.g., significant earnings beat/miss, major guidance revision, structural CapEx shift, breakthrough product launch, significant antitrust or competitive threat) directly affecting a specific company that warrants a NEW market hypothesis not yet tracked by candidate_theses.
    - Do NOT generate a duplicate thesis if an existing thesis can be updated.
-   - If candidate_theses is empty, choose between GENERATE_THESIS and IGNORE.
+   - If candidate_theses is empty, choose between GENERATE_THESIS (if directly company-specific) and IGNORE (if broad macro/unrelated).
 
 target_thesis_id must be null unless the action is UPDATE_THESIS.

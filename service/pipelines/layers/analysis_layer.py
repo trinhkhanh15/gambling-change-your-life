@@ -27,14 +27,15 @@ class AnalysisLayer:
         self._llm = llm
         self._repository = repository
         self._valid_tickers = valid_tickers or []
+        self._valid_symbols = {item.split()[0].upper().strip("(),;:.") for item in self._valid_tickers}
 
-    def generate_thesis(self, event: Event, recent_feedback: list[dict] | None = None) -> Thesis:
+    def generate_thesis(self, event: Event, recent_feedback: list[dict] | None = None) -> Thesis | None:
         ticker_constraint = ""
         if self._valid_tickers:
             ticker_constraint = (
                 "\nCRITICAL REQUIREMENT: The 'ticker' field MUST strictly be one of these valid stock symbols: "
                 + ", ".join(self._valid_tickers)
-                + ". If the event affects an industry or macro theme, choose the single company from this list that is most directly impacted. Do NOT use index tickers, ETFs (e.g. XLU, SPY, QQQ), or any ticker not in this list."
+                + ". The event must directly and tangibly impact this specific company. If the event is broad macroeconomic news, general industry policy, or about an unlisted entity with no direct single-stock impact, set ticker to 'NONE'."
             )
         prompt = render_prompt(
             "generate_thesis",
@@ -45,6 +46,8 @@ class AnalysisLayer:
             self._llm.generate_response(system_prompt=prompt, response_model=ThesisDraft)
         )
         ticker_val = draft.ticker.strip().split()[0].upper().strip("(),;:.")
+        if ticker_val == "NONE" or (self._valid_symbols and ticker_val not in self._valid_symbols):
+            return None
         now = event.published_at
         thesis = Thesis(
             id=f"thesis-{uuid4().hex[:12]}",
@@ -91,7 +94,18 @@ class AnalysisLayer:
         if decision.action == RouterAction.IGNORE:
             return decision, None
         if decision.action == RouterAction.GENERATE_THESIS:
-            return decision, self.generate_thesis(event, recent_feedback)
+            thesis = self.generate_thesis(event, recent_feedback)
+            if thesis is None:
+                return (
+                    decision.model_copy(
+                        update={
+                            "action": RouterAction.IGNORE,
+                            "reasoning": "No direct single-stock company impact from valid tickers list",
+                        }
+                    ),
+                    None,
+                )
+            return decision, thesis
 
         target = next((item for item in active_theses if item.id == decision.target_thesis_id), None)
         if target is None:
@@ -103,7 +117,27 @@ class AnalysisLayer:
             if target is not None:
                 decision = decision.model_copy(update={"target_thesis_id": target.id})
         if target is None:
-            raise ValueError(f"router selected unknown or inactive thesis: {decision.target_thesis_id}")
+            # Fall back to generating a new thesis or ignoring instead of crashing a long replay run
+            thesis = self.generate_thesis(event, recent_feedback)
+            if thesis is None:
+                return (
+                    decision.model_copy(
+                        update={
+                            "action": RouterAction.IGNORE,
+                            "reasoning": f"Router selected unknown thesis {decision.target_thesis_id} and no valid single-stock impact found",
+                        }
+                    ),
+                    None,
+                )
+            return (
+                decision.model_copy(
+                    update={
+                        "action": RouterAction.GENERATE_THESIS,
+                        "reasoning": f"Fell back from unknown thesis {decision.target_thesis_id} to a new thesis",
+                    }
+                ),
+                thesis,
+            )
         update_prompt = render_prompt(
             "update_kill_thesis",
             {
@@ -142,10 +176,14 @@ class AnalysisLayer:
     def _top_candidates(self, event: Event, active_theses: list[Thesis]) -> list[Thesis]:
         """Top-K active theses sharing a ticker with the event or >=3 content words with its text."""
         tickers = {company.upper() for company in event.companies_mentioned}
-        words = set(_WORD.findall(f"{event.title} {event.content}".lower()))
+        text_lower = f"{event.title} {event.content}".lower()
+        words = set(_WORD.findall(text_lower))
         scored = []
         for thesis in active_theses:
-            by_ticker = thesis.ticker.upper() in tickers
+            by_ticker = (
+                thesis.ticker.upper() in tickers
+                or (len(thesis.ticker) >= 3 and bool(re.search(rf"\b{re.escape(thesis.ticker)}\b", text_lower, re.IGNORECASE)))
+            )
             overlap = len(words & set(_WORD.findall(thesis.core_claim.lower())))
             if by_ticker or overlap >= 3:
                 scored.append((by_ticker, overlap, thesis))

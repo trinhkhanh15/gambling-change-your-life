@@ -102,10 +102,11 @@ class MarketHypothesisPipeline:
             active_predictions = [
                 item
                 for item in self._repository.list(Prediction)
-                if item.thesis_id == thesis.id and item.status == PredictionStatus.ACTIVE
+                if (item.thesis_id == thesis.id or item.target == thesis.ticker)
+                and item.status == PredictionStatus.ACTIVE
             ]
             if self._outcome_resolver is not None and active_predictions:
-                # Keep the original forecast alive until its market horizon resolves.
+                # Keep the existing active forecast for this ticker alive until its market horizon resolves.
                 prediction = max(active_predictions, key=lambda item: item.version)
                 return PipelineResult(event, decision, thesis, prediction)
             market_context = None

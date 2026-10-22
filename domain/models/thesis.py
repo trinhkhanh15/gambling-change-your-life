@@ -39,13 +39,13 @@ class Thesis(BaseModel):
 class ThesisDraft(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    ticker: str = Field(min_length=1, description="Primary stock ticker the thesis is about")
-    core_claim: str = Field(min_length=1, description="Concise fundamental claim; immutable once created")
+    ticker: str = Field(min_length=1, description="Primary stock ticker the thesis is about, or 'NONE' if not company-specific")
+    core_claim: str = Field(min_length=1, description="Concise fundamental claim (BULLISH or BEARISH); immutable once created")
     core_assumptions: list[str] = Field(
         min_length=1, description="2-3 falsifiable conditions; if one breaks, the thesis is killed"
     )
     initial_strength: float = Field(
-        ge=0.0, le=1.0, description="How strongly the current evidence supports the thesis (0.50-0.85)"
+        ge=0.0, le=1.0, description="How strongly the current evidence supports the thesis (0.20-0.85). Low values (0.20-0.45) for negative/vulnerable developments, high values (0.65-0.85) for confirmed catalysts"
     )
     evidence_points: list[str] = Field(min_length=1, description="Facts from the event that support the thesis")
     counter_evidence_points: list[str] = Field(
