@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import re
+from math import isfinite
 from dataclasses import dataclass
 from datetime import date, datetime, time, timezone
 from pathlib import Path
@@ -71,7 +72,7 @@ class StockPriceOutcomeResolver:
                     price = float(price_text)
                 except (ValueError, TypeError):
                     continue
-                if ticker and price > 0:
+                if ticker and isfinite(price) and price > 0:
                     self._prices.setdefault(ticker, []).append((trade_date, price))
         for series in self._prices.values():
             series.sort(key=lambda item: item[0])
@@ -143,6 +144,8 @@ class StockPriceOutcomeResolver:
         return "a forecast market window is available"
 
     def resolve(self, prediction: Prediction) -> Reality | None:
+        if prediction.metrics != ["adjusted_price_return"]:
+            raise ValueError("stock-price resolution requires only adjusted_price_return")
         ticker = self.canonical_ticker(prediction.target)
         if ticker is None:
             return None
@@ -151,6 +154,8 @@ class StockPriceOutcomeResolver:
         baseline_value = prices.get(prediction.horizon_start)
         if actual_value is None or baseline_value is None or baseline_value <= 0:
             return None
+        if prediction.baseline != baseline_value:
+            raise ValueError("prediction baseline does not match the market baseline")
         direction = (
             Direction.UP if actual_value > baseline_value
             else Direction.DOWN if actual_value < baseline_value
@@ -161,7 +166,7 @@ class StockPriceOutcomeResolver:
             id=f"reality-{prediction.id}-v{prediction.version}",
             prediction_id=prediction.id,
             target=prediction.target,
-            metric=prediction.metrics[0],
+            metric="adjusted_price_return",
             baseline=prediction.baseline,
             actual_value=actual_value,
             actual_direction=direction,
@@ -169,6 +174,7 @@ class StockPriceOutcomeResolver:
             source=self.prices_path.name,
             reasoning=(
                 f"Adjusted close on {prediction.horizon_end.isoformat()} compared with "
-                f"the baseline on {prediction.horizon_start.isoformat()}."
+                f"the baseline on {prediction.horizon_start.isoformat()}. "
+                "Driver attribution was not performed: price data alone cannot establish causes."
             ),
         )

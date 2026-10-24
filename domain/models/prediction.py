@@ -1,7 +1,7 @@
 from datetime import date, datetime, timezone
 from enum import Enum
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, model_validator
 
 
 class Direction(str, Enum):
@@ -28,8 +28,8 @@ class Prediction(BaseModel):
     direction: Direction
     horizon_start: date
     horizon_end: date
-    baseline: float
-    expected_change_pct: float
+    baseline: FiniteFloat
+    expected_change_pct: FiniteFloat
     predicted_drivers: list[str] = Field(min_length=1)
     confidence: float = Field(ge=0.0, le=1.0)
     resolution_criteria: list[str] = Field(min_length=1)
@@ -59,14 +59,18 @@ class PredictionDraft(BaseModel):
     direction: Direction
     horizon_start: date
     horizon_end: date
-    baseline: float = Field(description="Reference value at horizon_start")
-    expected_change_pct: float = Field(
+    baseline: FiniteFloat = Field(description="Reference value at horizon_start")
+    expected_change_pct: FiniteFloat = Field(
         description="Decimal fraction (0.03 = +3%, -0.05 = -5%); positive for UP, negative for DOWN, 0 for FLAT"
     )
     predicted_drivers: list[str] = Field(min_length=1, description="Main causal drivers behind the prediction")
     confidence: float = Field(ge=0.0, le=1.0)
     resolution_criteria: list[str] = Field(min_length=1, description="Objective, observable resolution rules")
     reasoning: str = Field(min_length=1, description="Causal reasoning; what is new relative to market expectations")
+
+    @model_validator(mode="after")
+    def validate_horizon_and_direction(self):
+        return Prediction.validate_horizon_and_direction(self)
 
 
 class PredictionChange(str, Enum):

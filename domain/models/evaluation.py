@@ -19,16 +19,19 @@ class Evaluation(BaseModel):
 
 
 class EvaluationDraft(BaseModel):
-    """LLM rubric output: each score is 1.0, 0.5 or 0.0 (see domain/prompts/evaluate.txt)."""
+    """LLM direction/reasoning output; magnitude is computed by the service."""
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     direction_score: float = Field(ge=0.0, le=1.0, description="match=1.0, partial_match=0.5, no_match=0.0")
-    magnitude_score: float = Field(ge=0.0, le=1.0, description="close=1.0, off=0.5, very_off=0.0")
+    magnitude_score: float | None = Field(
+        default=None, ge=0.0, le=1.0,
+        description="Legacy compatibility field; ignored. Magnitude is computed by code.",
+    )
     reason_score: float | None = Field(
         default=None,
         ge=0.0,
         le=1.0,
         description="support=1.0, partially_support=0.5, contradict=0.0; null if reality has no drivers to compare",
     )
-    explanation: str = Field(min_length=1, description="Concise explanation of the three judgements")
+    explanation: str = Field(min_length=1, description="Concise explanation of direction and reasoning")

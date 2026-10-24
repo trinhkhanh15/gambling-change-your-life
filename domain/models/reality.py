@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
+from math import isfinite
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, model_validator
 
 from domain.models.prediction import Direction
 
@@ -12,8 +13,8 @@ class Reality(BaseModel):
     prediction_id: str = Field(min_length=1)
     target: str = Field(min_length=1)
     metric: str = Field(min_length=1)
-    baseline: float
-    actual_value: float
+    baseline: FiniteFloat
+    actual_value: FiniteFloat
     actual_direction: Direction
     observed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     source: str = Field(min_length=1)
@@ -25,6 +26,8 @@ class Reality(BaseModel):
         if self.baseline == 0:
             raise ValueError("baseline cannot be zero when deriving percentage change")
         derived = self.actual_change_pct
+        if not isfinite(derived):
+            raise ValueError("actual percentage change must be finite")
         expected = Direction.UP if derived > 0 else Direction.DOWN if derived < 0 else Direction.FLAT
         if self.actual_direction != expected:
             raise ValueError("actual_direction must match the observed values and baseline")

@@ -131,7 +131,6 @@ class MockLLMClient:
                 direction = 0.5
             else:
                 direction = 0.0
-            gap = abs(prediction.get("expected_change_pct", 0.0) - context.get("actual_change_pct", 0.0))
             predicted = {item.lower() for item in prediction.get("predicted_drivers", [])}
             actual = {item.lower() for item in reality.get("actual_drivers", [])}
             reason = None
@@ -139,7 +138,6 @@ class MockLLMClient:
                 reason = 1.0 if actual <= predicted else 0.5 if actual & predicted else 0.0
             return EvaluationDraft(
                 direction_score=direction,
-                magnitude_score=1.0 if gap <= 0.02 else 0.5 if gap <= 0.05 else 0.0,
                 reason_score=reason,
                 explanation="Mock rubric: direction, magnitude and driver overlap.",
             )
