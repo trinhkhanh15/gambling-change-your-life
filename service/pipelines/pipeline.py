@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from dataclasses import dataclass
+import logging
 from datetime import date, datetime, timezone
 
 from application.ports.repository import Repository
@@ -15,6 +16,9 @@ from service.pipelines.layers.evaluation_layer import EvaluationLayer
 from service.pipelines.layers.event_layer import EventLayer
 from service.pipelines.layers.prediction_layer import PredictionLayer
 from infra.sources.stock_prices import StockPriceOutcomeResolver
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -139,7 +143,10 @@ class MarketHypothesisPipeline:
             )
             if prediction.status != PredictionStatus.ACTIVE or not due:
                 continue
-            reality = self._outcome_resolver.resolve(prediction)
-            if reality is not None:
-                evaluations.append(self._evaluation.evaluate(prediction, reality))
+            try:
+                reality = self._outcome_resolver.resolve(prediction)
+                if reality is not None:
+                    evaluations.append(self._evaluation.evaluate(prediction, reality))
+            except ValueError as exc:
+                logger.warning("Cannot evaluate prediction %s: %s", prediction.id, exc)
         return evaluations

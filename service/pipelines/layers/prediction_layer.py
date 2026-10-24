@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
+from pydantic_core import to_jsonable_python
+
 from application.ports.llm import LLMClient
 from application.ports.repository import Repository
 from domain.models.prediction import (
@@ -38,15 +40,17 @@ class PredictionLayer:
             {
                 "thesis": thesis.model_dump(mode="json"),
                 "existing_prediction": active[0].model_dump(mode="json") if active else None,
+<<<<<<< HEAD
+                "market_context": to_jsonable_python(market_context),
+=======
                 "market_window": market_context,
+>>>>>>> 2d30810a3f3334148047f194681e7805230796fe
             },
         )
         draft = PredictionDraft.model_validate(
             self._llm.generate_response(system_prompt=prompt, response_model=PredictionDraft)
         )
         draft_fields = draft.model_dump()
-        if abs(draft_fields.get("expected_change_pct", 0.0)) >= 1.0:
-            draft_fields["expected_change_pct"] = draft_fields["expected_change_pct"] / 100.0
         if market_context:
             draft_fields.update(market_context)
             # The LLM's own criteria may cite a different horizon than the one graded.
